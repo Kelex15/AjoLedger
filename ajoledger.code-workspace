@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "frontend"
+		},
+		{
+			"path": "backend"
+		},
+		{
+			"path": "backend/src/main/java/com/ajoledger/backend"
+		},
+		{
+			"path": "."
+		}
+	]
+}

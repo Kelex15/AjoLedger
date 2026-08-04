@@ -1,0 +1,1 @@
+@.guide/CLAUDE.md
