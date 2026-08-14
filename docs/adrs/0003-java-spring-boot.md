@@ -1,6 +1,6 @@
 # ADR 0003: Java + Spring Boot as the Backend Language/Framework
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 

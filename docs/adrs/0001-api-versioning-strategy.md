@@ -1,6 +1,6 @@
 # ADR 0001: API Versioning Strategy
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR 0002: Modular Monolith Architecture (Package-by-Feature)
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR 0004: Split Persistence Strategy — JPA for State, JdbcTemplate for the Ledger
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
