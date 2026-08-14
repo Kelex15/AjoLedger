@@ -11,6 +11,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -35,8 +37,11 @@ public class AuditLog {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    // ON DELETE SET NULL: a reclaimed stale-unverified signup deletes its User row, and the
+    // audit trail should survive that as an orphaned record, not block the delete or vanish with it
     @ManyToOne
     @JoinColumn(name = "user_id", updatable = false)
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     private User user;
 
     @Enumerated(EnumType.STRING)
