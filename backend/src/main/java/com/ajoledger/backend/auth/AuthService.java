@@ -106,14 +106,19 @@ public class AuthService {
             if (existingAuth != null && existingAuth.isEmailVerified()) {
                 throw new DataIntegrityViolationException("Username or email already registered");
             }
+            // explicit flush: Hibernate's default flush order runs all inserts before all deletes
+            // within one transaction, so without this the new user's insert (below) would hit
+            // the unique email constraint before this delete ever reaches the database
             if (existingAuth != null) {
                 userAuthRepository.delete(existingAuth);
+                userAuthRepository.flush();
             }
             userRepository.delete(existingUser);
+            userRepository.flush();
         });
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = InvalidOrExpiredTokenException.class)
     public MessageResponseDTO verifyEmail(VerifyEmailRequestDTO dto) {
         UserAuth userAuth = userAuthRepository.findByVerificationToken(dto.getToken())
                 .orElseThrow(() -> new InvalidOrExpiredTokenException("Invalid or expired verification token"));
@@ -136,7 +141,7 @@ public class AuthService {
         return new MessageResponseDTO("Email verified. You can now log in.");
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = {InvalidCredentialsException.class, AccountLockedException.class, EmailNotVerifiedException.class})
     public AuthResponseDTO login(LoginRequestDTO dto) {
         String email = dto.getEmail().toLowerCase();
 
@@ -175,7 +180,7 @@ public class AuthService {
         return issueTokens(user);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = {InvalidCredentialsException.class, EmailNotVerifiedException.class})
     public AuthResponseDTO loginWithGoogle(GoogleLoginRequestDTO dto) {
         GoogleTokenVerifierService.GoogleUserInfo googleUser = googleTokenVerifierService.verify(dto.getIdToken())
                 .orElseThrow(() -> {
