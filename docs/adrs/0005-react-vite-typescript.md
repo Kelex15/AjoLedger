@@ -1,6 +1,6 @@
 # ADR 0005: React + Vite + TypeScript for the Frontend
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR 0006: Auth & Identity Security Model
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
@@ -13,13 +13,13 @@ I did first consider Google-OAuth-only, on the reasoning that it delegates crede
 ### Identity/credential split
 `User` (profile data returned in API responses) and credentials live on separate entities. A new `UserAuth` entity holds `passwordHash`, `googleId`, `emailVerified`, failed-login tracking, and similar — nothing security-sensitive ever sits on `User`, and nothing on `UserAuth` is ever serialized into a DTO. `UserAuth` stays in the `auth` package (per ADR 0002's module boundaries), so nothing outside `auth` can reach it directly.
 
-### Password primary, Google OAuth as an authenticated-only secondary method
-Every account is created through password signup — Google OAuth is never a way to create a new account, only a way to log into one that already exists. Concretely: "Sign in with Google" on the login page only succeeds if that Google account's ID has already been explicitly linked to a `UserAuth` record; if it hasn't, the attempt is rejected and the user is told to log in with their password and link Google from account settings (or sign up, if they don't have an account at all).
+### Password primary, Google OAuth auto-linked once the account's email is verified
+Every account is created through password signup — Google OAuth is never a way to create a new account, only a way to log into one that already exists. Once a user has verified their email (via the signup verification link), a later "Sign in with Google" attempt auto-links to that account, provided Google's ID token asserts `email_verified: true` for an email that exactly matches the account's own already-verified email. Both AjoLedger's own verification link and Google's `email_verified` claim are ultimately proving the same thing — current control of that mailbox — so trusting the match at that point is reasonable, not a gap.
 
-Linking only ever happens from an authenticated session — I never use a matching email address to auto-associate a Google login with an existing account. That's the actual fix for the account-takeover vector: an attacker controlling `victim@example.com`'s Google account (without knowing their AjoLedger password) should never be able to log into their AjoLedger account just by matching on email.
+The actual safeguard here is that check specifically: linking only happens off `email_verified: true`, never off the mere presence of an email field on the token. An OAuth response that returns an email without asserting Google itself has verified it doesn't get to link — that's the real account-takeover vector (an IdP, or a misconfigured OIDC flow, handing back an unverified email an attacker could claim). If no `UserAuth` record has a verified email matching the Google account's, the Google sign-in attempt is rejected and the user is told to sign up with a password first.
 
 ### Email verification gates every session, regardless of method
-`emailVerified` starts `false` on signup. No session — password or Google — is issued while it's false. This check happens in one place in the login flow, checked unconditionally, rather than being assumed true for OAuth logins because Google already verified the address on their end. In practice, since Google linking can only happen from an authenticated session (which itself required passing email verification already), this case shouldn't come up much — but the gate is unconditional rather than relying on that ordering to hold forever as the code evolves.
+`emailVerified` starts `false` on signup. No session — password or Google — is issued while it's false, and Google linking specifically requires the account's own `emailVerified` to already be `true` before it will even attempt the match. This check happens in one place in the login flow, checked unconditionally, rather than being assumed true for OAuth logins just because Google's token also claims verification — both have to be true.
 
 ### Rate limiting on login attempts
 Failed attempts are tracked per `UserAuth` record (count + timestamp of last failure), not via an external store — five consecutive failures locks the account for 15 minutes, and a successful login resets the counter. Good enough for a single-instance v1; if this ever runs horizontally scaled, that counter needs to move to something shared (Redis) instead of living on the row, since concurrent instances checking/incrementing a DB column isn't safe under real concurrency the way it would need to be — noting that now so it isn't forgotten later.
@@ -49,4 +49,4 @@ Regex-based password complexity rules instead of strength estimation — rejecte
 
 This is a meaningfully bigger Phase 1 auth scope than "Spring Security, JWT" implied — `UserAuth`, the linking policy, email verification (which now needs an actual email-sending mechanism I haven't picked yet — SMTP/SES, or a console-logged link for local dev, is an open question for implementation time), rate limiting, refresh token storage, a password-strength dependency, and an audit log, all before any circle/ledger-facing endpoint gets to sit behind real auth.
 
-The account-linking policy means a user who signs up with Google-matching email but forgets they already have a password account gets a slightly less convenient first experience (told to log in with password, not silently logged in) — a deliberate tradeoff of a small UX cost for closing a real attack path.
+The auto-link policy depends entirely on correctly checking Google's `email_verified` claim rather than just the email field — that check has to be right, since it's the only thing standing between "safe, convenient linking" and the exact takeover vector this ADR is trying to avoid.
