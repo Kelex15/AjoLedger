@@ -18,9 +18,17 @@ server:
 
 ajoledger:
   jwt:
-    secret: ${JWT_SECRET:defaultSecretKey}
-    expiration: ${JWT_EXPIRATION:3600000} # 1 hour in milliseconds
+    secret: ${JWT_SECRET} # no default on purpose - a committed fallback secret is a real vulnerability, not a convenience. Set this in your local .env.
+    access-token-expiration: ${JWT_ACCESS_EXPIRATION:900000} # 15 min in milliseconds
+    refresh-token-expiration: ${JWT_REFRESH_EXPIRATION:2592000000} # 30 days in milliseconds
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
     allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
     allowed-headers: ${CORS_ALLOWED_HEADERS:Content-Type,Authorization}
+  security:
+    max-failed-attempts: ${AUTH_MAX_FAILED_ATTEMPTS:5}
+    lockout-duration-minutes: ${AUTH_LOCKOUT_MINUTES:15}
+  google:
+    client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
+  frontend:
+    base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
