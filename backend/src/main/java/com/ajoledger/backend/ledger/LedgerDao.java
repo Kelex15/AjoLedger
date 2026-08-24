@@ -53,6 +53,17 @@ public class LedgerDao {
         });
     }
 
+    public boolean transactionInvolvesUser(UUID transactionId, UUID userId) {
+        String sql = """
+            SELECT EXISTS (
+                SELECT 1 FROM ledger_entry le
+                JOIN user_account ua ON ua.id = le.account_id
+                WHERE le.transaction_id = ? AND ua.user_id = ?
+            )
+            """;
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(sql, Boolean.class, transactionId, userId));
+    }
+
     /**
      * Applies net balance changes (positive = credit, negative = debit) to each account.
      * Accounts must already be locked via {@link #lockAccounts}.

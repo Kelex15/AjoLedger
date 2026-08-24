@@ -49,7 +49,7 @@ public class User {
     private String lastName;
 
     @NotBlank(message = "Email is required")
-    @Column(name = "email", nullable = false, unique = true, length = 50)
+    @Column(name = "email", nullable = false, unique = true, length = 100)
     private String email;
 
     @JsonIgnore

@@ -1,5 +1,2 @@
 org.springframework.boot.EnvironmentPostProcessor=\
 com.ajoledger.backend.system.DotenvEnvironmentPostProcessor
-
-org.springframework.context.ApplicationListener=\
-com.ajoledger.backend.system.FlywayMigrationListener

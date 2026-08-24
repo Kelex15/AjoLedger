@@ -28,3 +28,16 @@ Plain-language explanations of the genuinely complex parts of the system, so I c
 **Key files:** `backend/src/main/java/com/ajoledger/backend/auth/GoogleTokenVerifierService.java`, `AuthService.loginWithGoogle()`.
 **You should know:** Why not just match on email — the `email_verified` check specifically is the whole security property; without it, the account-linking logic would be exploitable.
 **In my own words:**
+
+## Double-entry ledger: transactions, legs, and the write path
+
+**What it does (one sentence):** Every money movement is recorded as one `transaction` header row plus two or more `ledger_entry` "leg" rows — one leg per account touched, debited or credited by a specific amount — written together so the books can never go unbalanced.
+**Why it exists:** ADR-0004 requires the ledger to be auditable at the database level, not an emergent property of application code behaving correctly. Standard double-entry accounting's answer to "prove the books always balance" is: break every event into legs, and require the sum of debits to always equal the sum of credits for that event. "Leg" is the term for one of those pieces — one account, one direction (debit or credit), one amount.
+**How it works, step by step:**
+1. A business event (a transfer, a contribution, a payout) is broken into a list of legs before anything is written — e.g. a plain transfer is 2 legs (debit source, credit destination), a `PAYOUT` is 3 legs (debit the circle's pot, credit the recipient's `SAVINGS`, credit their `LIEN`).
+2. `TransactionService`'s shared helper (`postLedgerTransaction`) locks every account those legs touch (`SELECT ... FOR UPDATE`, deterministic order to avoid deadlocks), checks that every debit leg's account actually has enough balance, and only then writes the `transaction` header row and all the `ledger_entry` leg rows together, and finally adjusts each account's cached balance by its net change.
+3. A deferred Postgres trigger checks, at commit time, that every transaction's legs sum to zero and that there are at least two of them — the database itself refuses an unbalanced write, it isn't just trusted application logic.
+4. Every write also carries an idempotency key so a retried request can't double-process.
+**Key files:** `backend/src/main/java/com/ajoledger/backend/transaction/TransactionService.java` (the `Leg` record and `postLedgerTransaction` helper), `LedgerDao.java`, `db/migration/V3__create_ledger_tables.sql` (the balance-check trigger).
+**You should know:** Why "leg" specifically, rather than treating debits and credits as separate standalone concepts — it's the unit a transaction is built out of, and the balancing invariant is defined in terms of legs summing to zero *within one transaction*, not in terms of any single leg being correct on its own.
+**In my own words:**

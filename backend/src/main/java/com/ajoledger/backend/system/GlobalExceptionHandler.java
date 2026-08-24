@@ -10,12 +10,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import com.ajoledger.backend.account.exception.AccountNotFoundException;
 import com.ajoledger.backend.auth.dto.MessageResponseDTO;
 import com.ajoledger.backend.auth.exception.AccountLockedException;
 import com.ajoledger.backend.auth.exception.EmailNotVerifiedException;
 import com.ajoledger.backend.auth.exception.InvalidCredentialsException;
 import com.ajoledger.backend.auth.exception.InvalidOrExpiredTokenException;
 import com.ajoledger.backend.auth.exception.RefreshTokenReuseDetectedException;
+import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
+import com.ajoledger.backend.transaction.exception.IdempotencyKeyConflictException;
+import com.ajoledger.backend.transaction.exception.LienWithdrawalBlockedException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -43,6 +47,26 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RefreshTokenReuseDetectedException.class)
     public ResponseEntity<MessageResponseDTO> handleRefreshTokenReuse(RefreshTokenReuseDetectedException e) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new MessageResponseDTO("Invalid refresh token"));
+    }
+
+    @ExceptionHandler(InsufficientBalanceException.class)
+    public ResponseEntity<MessageResponseDTO> handleInsufficientBalance(InsufficientBalanceException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(IdempotencyKeyConflictException.class)
+    public ResponseEntity<MessageResponseDTO> handleIdempotencyKeyConflict(IdempotencyKeyConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(AccountNotFoundException.class)
+    public ResponseEntity<MessageResponseDTO> handleAccountNotFound(AccountNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(LienWithdrawalBlockedException.class)
+    public ResponseEntity<MessageResponseDTO> handleLienWithdrawalBlocked(LienWithdrawalBlockedException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO(e.getMessage()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
