@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-import com.ajoledger.backend.account.Account;
+import com.ajoledger.backend.account.UserAccount;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
@@ -37,24 +37,24 @@ public class User {
     private UUID id;
 
     @NotBlank(message = "Username is required")
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 25)
     private String username;
 
     @NotBlank(message = "FirstName is required")
-    @Column(name = "first_name", nullable = false)
+    @Column(name = "first_name", nullable = false, length = 25)
     private String firstName;
 
     @NotBlank(message = "LastName is required")
-    @Column(name = "last_name", nullable = false)
+    @Column(name = "last_name", nullable = false, length = 25)
     private String lastName;
 
     @NotBlank(message = "Email is required")
-    @Column(name = "email", nullable = false, unique = true)
+    @Column(name = "email", nullable = false, unique = true, length = 50)
     private String email;
 
     @JsonIgnore
-    @OneToMany(mappedBy = "users")
-    private List<Account> accounts;
+    @OneToMany(mappedBy = "user")
+    private List<UserAccount> accounts;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

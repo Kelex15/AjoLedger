@@ -43,7 +43,7 @@ public class Circle {
     private UUID id;
 
     @NotBlank(message = "Name is required")
-    @Column(nullable = false)
+    @Column(nullable = false, length = 25)
     private String name;
 
     @NotBlank(message = "Description is required")
