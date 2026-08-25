@@ -68,6 +68,10 @@ public class Circle {
     @Column(name = "current_round", nullable = false)
     private int currentRound;
 
+    /** When the last round completed (payout resolved); anchors the next round's due date (lastRoundAt + term). */
+    @Column(name = "last_round_at")
+    private LocalDateTime lastRoundAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private CircleStatus status;

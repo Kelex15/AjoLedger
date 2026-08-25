@@ -1,8 +1,11 @@
 package com.ajoledger.backend.circle;
 
+import com.ajoledger.backend.account.CircleAccount;
+import com.ajoledger.backend.account.CircleAccountRepository;
 import com.ajoledger.backend.account.UserAccount;
 import com.ajoledger.backend.account.UserAccountRepository;
 import com.ajoledger.backend.account.UserAccountType;
+import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.transaction.Leg;
@@ -10,12 +13,14 @@ import com.ajoledger.backend.transaction.Transaction;
 import com.ajoledger.backend.transaction.TransactionService;
 import com.ajoledger.backend.transaction.TransactionType;
 import com.ajoledger.backend.transaction.exception.LienWithdrawalBlockedException;
+import com.ajoledger.backend.user.User;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -28,8 +33,11 @@ public class CircleService {
 
     private final TransactionService transactionService;
     private final UserAccountRepository userAccountRepository;
+    private final CircleRepository circleRepository;
+    private final CircleAccountRepository circleAccountRepository;
     private final CircleMembershipRepository circleMembershipRepository;
     private final CirclePayoutRepository circlePayoutRepository;
+    private final CircleSizingPolicy circleSizingPolicy;
 
     public Transaction postContribution(UUID userId, UUID circleId, UUID circlePotAccountId,
                                          BigDecimal amount, String idempotencyKey) {
@@ -130,5 +138,92 @@ public class CircleService {
         }
 
         return transactions;
+    }
+
+    // ---- scheduler interface: called once per circle a scheduled job decides is due ----
+
+    /**
+     * Orchestrates a round's contribution deadline for one circle: sweep unpaid members' SAVINGS,
+     * mark whoever's still unpaid, then resolve the round if it's now fully funded.
+     */
+    public void processRoundDeadline(UUID circleId) {
+        sweepUnpaidContributions(circleId);
+        markNonPayers(circleId);
+        resolveRoundIfComplete(circleId);
+    }
+
+    private void sweepUnpaidContributions(UUID circleId) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new IllegalStateException("Circle not found: " + circleId));
+        CircleAccount pot = circleAccountRepository.requireByCircleId(circleId);
+        List<CircleMembership> unpaid = unpaidActiveMemberships(circle);
+
+        for (CircleMembership membership : unpaid) {
+            try {
+                postContribution(membership.getUser().getId(), circleId, pot.getId(), circle.getContributionAmount(),
+                        circleId + ":" + membership.getId() + ":round-" + circle.getCurrentRound());
+                membership.setLastContributedRound(circle.getCurrentRound());
+                circleMembershipRepository.save(membership);
+            } catch (InsufficientBalanceException e) {
+                // left unpaid - markNonPayers handles it next
+            }
+        }
+    }
+
+    private void markNonPayers(UUID circleId) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new IllegalStateException("Circle not found: " + circleId));
+
+        for (CircleMembership membership : unpaidActiveMemberships(circle)) {
+            User user = membership.getUser();
+            boolean alreadyPaidOut = circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circleId, user.getId());
+
+            if (alreadyPaidOut) {
+                membership.setStatus(MembershipStatus.DEFAULTED);
+                circleMembershipRepository.save(membership);
+                int position = membership.getPosition() != null ? membership.getPosition() : 0;
+                BigDecimal groupLoss = circleSizingPolicy.calculatePotentialGroupLoss(circle, user, position);
+                postDefaultWaterfall(user.getId(), membership.getId(), groupLoss,
+                        circleId + ":" + membership.getId() + ":default-round-" + circle.getCurrentRound());
+            } else {
+                membership.setStatus(MembershipStatus.WITHDRAWN);
+                circleMembershipRepository.save(membership);
+            }
+        }
+    }
+
+    private void resolveRoundIfComplete(UUID circleId) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new IllegalStateException("Circle not found: " + circleId));
+        boolean everyoneCurrent = circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE)
+                .stream()
+                .allMatch(m -> m.getLastContributedRound() != null && m.getLastContributedRound() >= circle.getCurrentRound());
+
+        if (!everyoneCurrent) {
+            return;
+        }
+
+        UUID recipientUserId = getCurrentPayoutReceiver(circleId);
+        if (recipientUserId == null) {
+            return;
+        }
+
+        // TODO: build the CirclePayout row, withheld-amount split, and call postPayout - blocked
+        // on the same payout-position design this stub is standing in for.
+
+        circle.setCurrentRound(circle.getCurrentRound() + 1);
+        circle.setLastRoundAt(LocalDateTime.now());
+        circleRepository.save(circle);
+    }
+
+    private List<CircleMembership> unpaidActiveMemberships(Circle circle) {
+        return circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE).stream()
+                .filter(m -> m.getLastContributedRound() == null || m.getLastContributedRound() < circle.getCurrentRound())
+                .toList();
+    }
+
+    /** Who receives this circle's current round payout. Payout-position assignment isn't designed yet. */
+    private UUID getCurrentPayoutReceiver(UUID circleId) {
+        return null;
     }
 }
