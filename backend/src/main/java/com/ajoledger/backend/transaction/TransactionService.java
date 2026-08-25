@@ -8,7 +8,7 @@ import com.ajoledger.backend.circle.CircleMembershipRepository;
 import com.ajoledger.backend.circle.CirclePayout;
 import com.ajoledger.backend.circle.CirclePayoutRepository;
 import com.ajoledger.backend.circle.MembershipStatus;
-import com.ajoledger.backend.fundingsource.FundingSourceType;
+import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.ledger.LedgerDao;
 import com.ajoledger.backend.ledger.LedgerEntry;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
@@ -51,7 +51,7 @@ public class TransactionService {
 
     // ---- public API ----
 
-    public Transaction postDeposit(UUID userId, UserAccountType targetType, FundingSourceType source,
+    public Transaction postDeposit(UUID userId, UserAccountType targetType, FundingType source,
                                     BigDecimal amount, String idempotencyKey) {
         UserAccount clearing = requireUserAccount(SYSTEM_USER_ID, clearingAccountType(source));
         UserAccount target = requireUserAccount(userId, targetType);
@@ -62,7 +62,7 @@ public class TransactionService {
                 "Deposit via " + source, legs);
     }
 
-    public Transaction postWithdrawal(UUID userId, UserAccountType sourceType, FundingSourceType destination,
+    public Transaction postWithdrawal(UUID userId, UserAccountType sourceType, FundingType destination,
                                        BigDecimal amount, String idempotencyKey) {
         UserAccount source = requireUserAccount(userId, sourceType);
         UserAccount clearing = requireUserAccount(SYSTEM_USER_ID, clearingAccountType(destination));
@@ -266,7 +266,7 @@ public class TransactionService {
         return result;
     }
 
-    private UserAccountType clearingAccountType(FundingSourceType source) {
+    private UserAccountType clearingAccountType(FundingType source) {
         return switch (source) {
             case STRIPE -> UserAccountType.CLEARING_STRIPE;
             case PAYPAL -> UserAccountType.CLEARING_PAYPAL;
