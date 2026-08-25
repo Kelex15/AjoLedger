@@ -2,6 +2,7 @@ package com.ajoledger.backend.account;
 
 import com.ajoledger.backend.account.exception.AccountNotFoundException;
 import com.ajoledger.backend.circle.Circle;
+import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.user.User;
 
 import lombok.RequiredArgsConstructor;
@@ -14,8 +15,6 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class AccountService {
-
-    private static final UUID SYSTEM_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     private final UserAccountRepository userAccountRepository;
     private final CircleAccountRepository circleAccountRepository;
@@ -42,7 +41,7 @@ public class AccountService {
     }
 
     public Optional<UserAccount> getUserAccount(UUID userId, UserAccountType type) {
-        if (SYSTEM_USER_ID.equals(userId)) {
+        if (Constants.Account.SYSTEM_USER_ID.equals(userId)) {
             throw new AccountNotFoundException("No such account");
         }
         return userAccountRepository.findByUserIdAndUserAccountType(userId, type);

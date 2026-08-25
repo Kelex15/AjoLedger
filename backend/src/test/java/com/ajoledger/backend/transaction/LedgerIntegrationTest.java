@@ -25,6 +25,7 @@ import com.ajoledger.backend.account.AccountRepository;
 import com.ajoledger.backend.account.AccountService;
 import com.ajoledger.backend.account.UserAccount;
 import com.ajoledger.backend.account.UserAccountType;
+import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.ledger.LedgerDao;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
@@ -45,6 +46,8 @@ class LedgerIntegrationTest {
 
     @Autowired
     private TransactionService transactionService;
+    @Autowired
+    private FundingService fundingService;
     @Autowired
     private TransactionTemplate transactionTemplate;
     @Autowired
@@ -71,7 +74,7 @@ class LedgerIntegrationTest {
     /** Funds an account via a real deposit, so the cached balance and the ledger's own aggregate agree from the start. */
     private UserAccount createFundedAccount(User user, UserAccountType type, BigDecimal balance) {
         UserAccount account = accountService.createUserAccount(user, type);
-        transactionService.postDeposit(user.getId(), type, FundingType.STRIPE, balance, UUID.randomUUID().toString());
+        fundingService.postDeposit(user.getId(), type, FundingType.STRIPE, balance, UUID.randomUUID().toString());
         return account;
     }
 

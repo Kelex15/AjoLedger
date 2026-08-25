@@ -2,7 +2,6 @@ package com.ajoledger.backend.funding;
 
 import com.ajoledger.backend.funding.dto.FundDepositRequestDTO;
 import com.ajoledger.backend.transaction.Transaction;
-import com.ajoledger.backend.transaction.TransactionService;
 import com.ajoledger.backend.transaction.dto.TransactionResponseDTO;
 
 import jakarta.validation.Valid;
@@ -21,19 +20,19 @@ import java.util.UUID;
 /**
  * Manually funds the calling user's own account - a stand-in for real Stripe/PayPal SDK
  * integration, which isn't wired up yet. Still goes through the real ledger write path
- * (TransactionService.postDeposit), just without an actual payment processor behind it.
+ * (FundingService.postDeposit), just without an actual payment processor behind it.
  */
 @RestController
 @RequestMapping("/api/funding")
 @RequiredArgsConstructor
 public class FundingController {
 
-    private final TransactionService transactionService;
+    private final FundingService fundingService;
 
     @PostMapping(path = "/deposit", version = "1")
     public ResponseEntity<TransactionResponseDTO> deposit(@AuthenticationPrincipal UUID currentUserId,
                                                             @Valid @RequestBody FundDepositRequestDTO dto) {
-        Transaction transaction = transactionService.postDeposit(
+        Transaction transaction = fundingService.postDeposit(
                 currentUserId, dto.getTargetType(), dto.getFundingType(), dto.getAmount(), dto.getIdempotencyKey());
         return ResponseEntity.status(HttpStatus.CREATED).body(TransactionResponseDTO.fromTransaction(transaction));
     }

@@ -4,23 +4,16 @@ import com.ajoledger.backend.account.UserAccount;
 import com.ajoledger.backend.account.UserAccountRepository;
 import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.account.exception.AccountNotFoundException;
-import com.ajoledger.backend.circle.CircleMembershipRepository;
-import com.ajoledger.backend.circle.CirclePayout;
-import com.ajoledger.backend.circle.CirclePayoutRepository;
-import com.ajoledger.backend.circle.MembershipStatus;
-import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.ledger.LedgerDao;
 import com.ajoledger.backend.ledger.LedgerEntry;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.transaction.exception.IdempotencyKeyConflictException;
-import com.ajoledger.backend.transaction.exception.LienWithdrawalBlockedException;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -38,164 +31,35 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TransactionService {
 
-    private static final UUID SYSTEM_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    private static final BigDecimal BUFFER_FEE_RATE = new BigDecimal("0.01");
-
     private final TransactionTemplate transactionTemplate;
     private final LedgerDao ledgerDao;
     private final TransactionDao transactionDao;
     private final IdempotencyDao idempotencyDao;
     private final UserAccountRepository userAccountRepository;
-    private final CircleMembershipRepository circleMembershipRepository;
-    private final CirclePayoutRepository circlePayoutRepository;
 
     // ---- public API ----
 
-    public Transaction postDeposit(UUID userId, UserAccountType targetType, FundingType source,
-                                    BigDecimal amount, String idempotencyKey) {
-        UserAccount clearing = requireUserAccount(SYSTEM_USER_ID, clearingAccountType(source));
-        UserAccount target = requireUserAccount(userId, targetType);
-        List<Leg> legs = List.of(
-                new Leg(clearing.getId(), amount, BigDecimal.ZERO),
-                new Leg(target.getId(), BigDecimal.ZERO, amount));
-        return postLedgerTransaction(idempotencyKey, "DEPOSIT", TransactionType.DEPOSIT, amount,
-                "Deposit via " + source, legs);
-    }
-
-    public Transaction postWithdrawal(UUID userId, UserAccountType sourceType, FundingType destination,
-                                       BigDecimal amount, String idempotencyKey) {
-        UserAccount source = requireUserAccount(userId, sourceType);
-        UserAccount clearing = requireUserAccount(SYSTEM_USER_ID, clearingAccountType(destination));
-        List<Leg> legs = List.of(
-                new Leg(source.getId(), amount, BigDecimal.ZERO),
-                new Leg(clearing.getId(), BigDecimal.ZERO, amount));
-        return postLedgerTransaction(idempotencyKey, "WITHDRAWAL", TransactionType.WITHDRAWAL, amount,
-                "Withdrawal to " + destination, legs);
-    }
-
     public Transaction postTransfer(UUID fromUserId, UserAccountType fromType, UUID toUserId, UserAccountType toType,
                                      BigDecimal amount, String idempotencyKey) {
-        UserAccount from = requireUserAccount(fromUserId, fromType);
-        UserAccount to = requireUserAccount(toUserId, toType);
+        UserAccount from = userAccountRepository.requireByUserIdAndType(fromUserId, fromType);
+        UserAccount to = userAccountRepository.requireByUserIdAndType(toUserId, toType);
         List<Leg> legs = List.of(
                 new Leg(from.getId(), amount, BigDecimal.ZERO),
                 new Leg(to.getId(), BigDecimal.ZERO, amount));
         return postLedgerTransaction(idempotencyKey, "TRANSFER", TransactionType.TRANSFER, amount, "Transfer", legs);
     }
 
-    public Transaction postContribution(UUID userId, UUID circleId, UUID circlePotAccountId,
-                                         BigDecimal amount, String idempotencyKey) {
-        UserAccount savings = requireUserAccount(userId, UserAccountType.SAVINGS);
-        UserAccount buffer = requireUserAccount(SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
-        BigDecimal fee = amount.multiply(BUFFER_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal netToPot = amount.subtract(fee);
-        List<Leg> legs = List.of(
-                new Leg(savings.getId(), amount, BigDecimal.ZERO),
-                new Leg(circlePotAccountId, BigDecimal.ZERO, netToPot),
-                new Leg(buffer.getId(), BigDecimal.ZERO, fee));
-        return postLedgerTransaction(idempotencyKey, "CONTRIBUTION", TransactionType.CONTRIBUTION, amount,
-                "Contribution to circle " + circleId, legs);
-    }
+    // ---- shared primitive, used by this and every other domain's money-moving service ----
 
-    public Transaction postPayout(UUID circlePotAccountId, UUID circlePayoutId, UUID recipientUserId,
-                                   BigDecimal grossAmount, BigDecimal withheldAmount, String idempotencyKey) {
-        UserAccount savings = requireUserAccount(recipientUserId, UserAccountType.SAVINGS);
-        UserAccount lien = requireUserAccount(recipientUserId, UserAccountType.LIEN);
-        BigDecimal net = grossAmount.subtract(withheldAmount);
-        List<Leg> legs = List.of(
-                new Leg(circlePotAccountId, grossAmount, BigDecimal.ZERO),
-                new Leg(savings.getId(), BigDecimal.ZERO, net),
-                new Leg(lien.getId(), BigDecimal.ZERO, withheldAmount));
-        return postLedgerTransaction(idempotencyKey, "PAYOUT", TransactionType.PAYOUT, grossAmount,
-                "Payout for circle payout " + circlePayoutId, legs,
-                transaction -> {
-                    CirclePayout payout = circlePayoutRepository.findById(circlePayoutId)
-                            .orElseThrow(() -> new IllegalStateException("CirclePayout not found: " + circlePayoutId));
-                    payout.setTransactionId(transaction.id());
-                    circlePayoutRepository.saveAndFlush(payout);
-                });
-    }
-
-    public Transaction postLienHold(UUID userId, BigDecimal amount, String idempotencyKey) {
-        UserAccount savings = requireUserAccount(userId, UserAccountType.SAVINGS);
-        UserAccount lien = requireUserAccount(userId, UserAccountType.LIEN);
-        List<Leg> legs = List.of(
-                new Leg(savings.getId(), amount, BigDecimal.ZERO),
-                new Leg(lien.getId(), BigDecimal.ZERO, amount));
-        return postLedgerTransaction(idempotencyKey, "LIEN_HOLD", TransactionType.LIEN_HOLD, amount,
-                "Lien top-up", legs);
-    }
-
-    public Transaction postLienWithdrawal(UUID userId, BigDecimal amount, String idempotencyKey) {
-        boolean hasActiveMembership = circleMembershipRepository.existsByUser_IdAndStatus(userId, MembershipStatus.ACTIVE);
-        if (hasActiveMembership) {
-            throw new LienWithdrawalBlockedException("Cannot withdraw lien while an active circle membership exists");
-        }
-        UserAccount lien = requireUserAccount(userId, UserAccountType.LIEN);
-        UserAccount savings = requireUserAccount(userId, UserAccountType.SAVINGS);
-        List<Leg> legs = List.of(
-                new Leg(lien.getId(), amount, BigDecimal.ZERO),
-                new Leg(savings.getId(), BigDecimal.ZERO, amount));
-        return postLedgerTransaction(idempotencyKey, "LIEN_WITHDRAWAL", TransactionType.LIEN_WITHDRAWAL, amount,
-                "Lien withdrawal", legs);
-    }
-
-    /**
-     * Default waterfall (design/v1.md Section 5, 3 steps): seize LIEN first, then the shared
-     * buffer covers the remainder. If the buffer also can't cover it, GROUP_SHORTFALL_ABSORPTION's
-     * crediting logic is a follow-on circle-settlement design question, not implemented here.
-     */
-    public List<Transaction> postDefaultWaterfall(UUID userId, UUID circleMembershipId, BigDecimal groupLoss,
-                                                    String idempotencyKey) {
-        UserAccount lien = requireUserAccount(userId, UserAccountType.LIEN);
-        UserAccount buffer = requireUserAccount(SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
-
-        BigDecimal lienBalance = lien.getBalance();
-        BigDecimal seizedFromLien = lienBalance.min(groupLoss);
-        BigDecimal remainingLoss = groupLoss.subtract(seizedFromLien);
-
-        List<Transaction> transactions = new java.util.ArrayList<>();
-
-        if (seizedFromLien.signum() > 0) {
-            List<Leg> seizureLegs = List.of(
-                    new Leg(lien.getId(), seizedFromLien, BigDecimal.ZERO),
-                    new Leg(buffer.getId(), BigDecimal.ZERO, seizedFromLien));
-            transactions.add(postLedgerTransaction(idempotencyKey + ":lien-seizure", "LIEN_SEIZURE",
-                    TransactionType.LIEN_SEIZURE, seizedFromLien,
-                    "Lien seizure for membership " + circleMembershipId, seizureLegs));
-        }
-
-        if (remainingLoss.signum() > 0) {
-            if (buffer.getBalance().compareTo(remainingLoss) < 0) {
-                throw new InsufficientBalanceException(
-                        "Shared insurance buffer cannot cover remaining default loss for membership " + circleMembershipId);
-            }
-            UserAccount recipientSavings = requireUserAccount(userId, UserAccountType.SAVINGS);
-            List<Leg> bufferLegs = List.of(
-                    new Leg(buffer.getId(), remainingLoss, BigDecimal.ZERO),
-                    new Leg(recipientSavings.getId(), BigDecimal.ZERO, remainingLoss));
-            transactions.add(postLedgerTransaction(idempotencyKey + ":buffer-payout", "BUFFER_PAYOUT_TO_COVER_DEFAULT",
-                    TransactionType.BUFFER_PAYOUT_TO_COVER_DEFAULT, remainingLoss,
-                    "Buffer payout covering default for membership " + circleMembershipId, bufferLegs));
-        }
-
-        return transactions;
-    }
-
-    // ---- shared helper ----
-
-    private record Leg(UUID accountId, BigDecimal debitAmount, BigDecimal creditAmount) {
-    }
-
-    private Transaction postLedgerTransaction(String idempotencyKey, String requestType, TransactionType type,
-                                               BigDecimal amount, String description, List<Leg> legs) {
+    public Transaction postLedgerTransaction(String idempotencyKey, String requestType, TransactionType type,
+                                              BigDecimal amount, String description, List<Leg> legs) {
         return postLedgerTransaction(idempotencyKey, requestType, type, amount, description, legs, t -> {
         });
     }
 
-    private Transaction postLedgerTransaction(String idempotencyKey, String requestType, TransactionType type,
-                                               BigDecimal amount, String description, List<Leg> legs,
-                                               Consumer<Transaction> onSuccess) {
+    public Transaction postLedgerTransaction(String idempotencyKey, String requestType, TransactionType type,
+                                              BigDecimal amount, String description, List<Leg> legs,
+                                              Consumer<Transaction> onSuccess) {
         String requestHash = hashRequest(requestType, legs);
         UUID idempotencyId = UUID.randomUUID();
         AtomicReference<RuntimeException> failure = new AtomicReference<>();
@@ -264,18 +128,6 @@ public class TransactionService {
             throw failure.get();
         }
         return result;
-    }
-
-    private UserAccountType clearingAccountType(FundingType source) {
-        return switch (source) {
-            case STRIPE -> UserAccountType.CLEARING_STRIPE;
-            case PAYPAL -> UserAccountType.CLEARING_PAYPAL;
-        };
-    }
-
-    private UserAccount requireUserAccount(UUID userId, UserAccountType type) {
-        return userAccountRepository.findByUserIdAndUserAccountType(userId, type)
-                .orElseThrow(() -> new AccountNotFoundException("No " + type + " account for user " + userId));
     }
 
     private String hashRequest(String requestType, List<Leg> legs) {
