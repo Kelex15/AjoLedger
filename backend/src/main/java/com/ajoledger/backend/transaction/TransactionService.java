@@ -217,8 +217,16 @@ public class TransactionService {
                 };
             }
 
+            @SuppressWarnings("null")
             List<UUID> accountIds = legs.stream().map(Leg::accountId).toList();
             Map<UUID, BigDecimal> balances = ledgerDao.lockAccounts(accountIds);
+
+            List<UUID> missingAccountIds = accountIds.stream().distinct()
+                    .filter(id -> !balances.containsKey(id))
+                    .toList();
+            if (!missingAccountIds.isEmpty()) {
+                throw new AccountNotFoundException("No account found for id(s): " + missingAccountIds);
+            }
 
             boolean insufficient = legs.stream().anyMatch(leg ->
                     leg.debitAmount().signum() > 0 && balances.get(leg.accountId()).compareTo(leg.debitAmount()) < 0);
@@ -238,6 +246,7 @@ public class TransactionService {
                     .toList();
             ledgerDao.insertEntries(entries);
 
+            @SuppressWarnings("null")
             Map<UUID, BigDecimal> netChanges = legs.stream()
                     .collect(Collectors.toMap(Leg::accountId,
                             leg -> leg.creditAmount().subtract(leg.debitAmount()), BigDecimal::add));

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 
 import com.ajoledger.backend.circle.Circle;
+import com.ajoledger.backend.circle.CircleMembership;
 import com.ajoledger.backend.circle.CircleStatus;
 import com.ajoledger.backend.circle.MembershipStatus;
 import com.ajoledger.backend.user.User;
@@ -13,9 +14,11 @@ import com.ajoledger.backend.user.User;
 public class FixedSizeCircleSizingPolicy implements CircleSizingPolicy {
 
     @Override
+    @SuppressWarnings("null")
     public boolean canMemberJoin(Circle circle, User candidate) {
         long activeMemberCount = circle.getMemberships().stream()
-                .filter(membership -> membership.getStatus() == MembershipStatus.ACTIVE)
+                .map(CircleMembership::getStatus)
+                .filter(MembershipStatus.ACTIVE::equals)
                 .count();
         return circle.getStatus() == CircleStatus.FORMING && activeMemberCount < circle.getMaxMembers();
     }
