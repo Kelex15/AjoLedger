@@ -53,6 +53,10 @@ public class LedgerDao {
         });
     }
 
+    public BigDecimal getBalance(UUID accountId) {
+        return jdbcTemplate.queryForObject("SELECT balance FROM account WHERE id = ?", BigDecimal.class, accountId);
+    }
+
     public boolean transactionInvolvesUser(UUID transactionId, UUID userId) {
         String sql = """
             SELECT EXISTS (
