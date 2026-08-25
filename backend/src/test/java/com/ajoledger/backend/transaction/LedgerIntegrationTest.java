@@ -21,9 +21,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import com.ajoledger.backend.account.AccountRepository;
 import com.ajoledger.backend.account.AccountService;
 import com.ajoledger.backend.account.UserAccount;
 import com.ajoledger.backend.account.UserAccountType;
+import com.ajoledger.backend.fundingsource.FundingSourceType;
 import com.ajoledger.backend.ledger.LedgerDao;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.transaction.exception.IdempotencyKeyConflictException;
@@ -53,6 +55,8 @@ class LedgerIntegrationTest {
     private AccountService accountService;
     @Autowired
     private LedgerDao ledgerDao;
+    @Autowired
+    private AccountRepository accountRepository;
 
     private User createUser() {
         User user = User.builder()
@@ -64,10 +68,18 @@ class LedgerIntegrationTest {
         return userRepository.save(user);
     }
 
+    /** Funds an account via a real deposit, so the cached balance and the ledger's own aggregate agree from the start. */
     private UserAccount createFundedAccount(User user, UserAccountType type, BigDecimal balance) {
         UserAccount account = accountService.createUserAccount(user, type);
-        jdbcTemplate.update("UPDATE account SET balance = ? WHERE id = ?", balance, account.getId());
+        transactionService.postDeposit(user.getId(), type, FundingSourceType.STRIPE, balance, UUID.randomUUID().toString());
         return account;
+    }
+
+    /** Asserts the cached Account.balance and the ledger's own aggregate agree, both equal to expected. */
+    private void assertBalance(UUID accountId, String expected) {
+        BigDecimal cached = accountRepository.findById(accountId).orElseThrow().getBalance();
+        assertThat(cached).isEqualByComparingTo(expected);
+        assertThat(ledgerDao.getBalance(accountId)).isEqualByComparingTo(expected);
     }
 
     @Test
@@ -111,8 +123,8 @@ class LedgerIntegrationTest {
 
         assertThat(succeeded).isEqualTo(1);
         assertThat(failed).isEqualTo(1);
-        assertThat(ledgerDao.getBalance(payerSavings.getId())).isEqualByComparingTo("0.00");
-        assertThat(ledgerDao.getBalance(recipientSavings.getId())).isEqualByComparingTo("100.00");
+        assertBalance(payerSavings.getId(), "0.00");
+        assertBalance(recipientSavings.getId(), "100.00");
     }
 
     @Test
@@ -130,8 +142,8 @@ class LedgerIntegrationTest {
 
         assertThat(second.id()).isEqualTo(first.id());
         // balance reflects exactly one transfer, not two
-        assertThat(ledgerDao.getBalance(payerSavings.getId())).isEqualByComparingTo("20.00");
-        assertThat(ledgerDao.getBalance(recipientSavings.getId())).isEqualByComparingTo("30.00");
+        assertBalance(payerSavings.getId(), "20.00");
+        assertBalance(recipientSavings.getId(), "30.00");
     }
 
     @Test
@@ -156,14 +168,15 @@ class LedgerIntegrationTest {
         User recipient = createUser();
         UserAccount payerSavings = createFundedAccount(payer, UserAccountType.SAVINGS, new BigDecimal("10.00"));
         accountService.createUserAccount(recipient, UserAccountType.SAVINGS);
+        Long transactionCountBefore = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transaction", Long.class);
 
         assertThatThrownBy(() -> transactionService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
                 recipient.getId(), UserAccountType.SAVINGS, new BigDecimal("50.00"), UUID.randomUUID().toString()))
                 .isInstanceOf(InsufficientBalanceException.class);
 
-        assertThat(ledgerDao.getBalance(payerSavings.getId())).isEqualByComparingTo("10.00");
-        Long transactionCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transaction", Long.class);
-        assertThat(transactionCount).isZero();
+        assertBalance(payerSavings.getId(), "10.00");
+        Long transactionCountAfter = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transaction", Long.class);
+        assertThat(transactionCountAfter).isEqualTo(transactionCountBefore);
     }
 
     @Test

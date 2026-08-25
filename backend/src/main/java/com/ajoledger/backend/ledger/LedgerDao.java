@@ -19,21 +19,40 @@ public class LedgerDao {
     private final JdbcTemplate jdbcTemplate;
 
     /**
+     * An account's locked balance, plus whether it's exempt from balance-sufficiency checks.
+     * "Unlimited" accounts are clearing accounts (CLEARING_STRIPE, CLEARING_PAYPAL, ... -
+     * matched by naming convention so a future funding source needs no code change here) -
+     * they represent the platform's external boundary and are expected to run negative, unlike
+     * every user-facing account type, which the trust/risk model is deliberately designed to
+     * never need to push negative (see design/v1.md's default waterfall).
+     */
+    public record AccountBalance(BigDecimal balance, boolean unlimited) {
+    }
+
+    /**
      * Locks every given account row (SELECT ... FOR UPDATE) in a deterministic order
      * (sorted by id) to avoid deadlocks when concurrent writes touch overlapping account sets.
      * Must be called from inside the caller's existing transaction (TransactionTemplate callback).
      */
-    public Map<UUID, BigDecimal> lockAccounts(List<UUID> accountIds) {
+    public Map<UUID, AccountBalance> lockAccounts(List<UUID> accountIds) {
         List<UUID> sortedIds = accountIds.stream().distinct().sorted().toList();
         if (sortedIds.isEmpty()) {
             return Map.of();
         }
         String placeholders = sortedIds.stream().map(id -> "?").collect(Collectors.joining(","));
-        String sql = "SELECT id, balance FROM account WHERE id IN (" + placeholders + ") ORDER BY id FOR UPDATE";
+        String sql = """
+            SELECT a.id, a.balance, COALESCE(ua.user_account_type LIKE 'CLEARING_%', false) AS unlimited
+            FROM account a
+            LEFT JOIN user_account ua ON ua.id = a.id
+            WHERE a.id IN (""" + placeholders + """
+            )
+            ORDER BY a.id FOR UPDATE OF a
+            """;
 
-        Map<UUID, BigDecimal> balancesById = new LinkedHashMap<>();
+        Map<UUID, AccountBalance> balancesById = new LinkedHashMap<>();
         jdbcTemplate.query(sql, rs -> {
-            balancesById.put(UUID.fromString(rs.getString("id")), rs.getBigDecimal("balance"));
+            balancesById.put(UUID.fromString(rs.getString("id")),
+                    new AccountBalance(rs.getBigDecimal("balance"), rs.getBoolean("unlimited")));
         }, sortedIds.toArray());
         return balancesById;
     }
@@ -53,8 +72,13 @@ public class LedgerDao {
         });
     }
 
+    /**
+     * The account's true balance, computed by aggregating ledger_entry directly - independent
+     * of (and useful for verifying against) the cached Account.balance column.
+     */
     public BigDecimal getBalance(UUID accountId) {
-        return jdbcTemplate.queryForObject("SELECT balance FROM account WHERE id = ?", BigDecimal.class, accountId);
+        String sql = "SELECT COALESCE(SUM(credit_amount - debit_amount), 0) FROM ledger_entry WHERE account_id = ?";
+        return jdbcTemplate.queryForObject(sql, BigDecimal.class, accountId);
     }
 
     public boolean transactionInvolvesUser(UUID transactionId, UUID userId) {

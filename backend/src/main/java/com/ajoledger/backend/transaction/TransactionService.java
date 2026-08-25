@@ -219,7 +219,7 @@ public class TransactionService {
 
             @SuppressWarnings("null")
             List<UUID> accountIds = legs.stream().map(Leg::accountId).toList();
-            Map<UUID, BigDecimal> balances = ledgerDao.lockAccounts(accountIds);
+            Map<UUID, LedgerDao.AccountBalance> balances = ledgerDao.lockAccounts(accountIds);
 
             List<UUID> missingAccountIds = accountIds.stream().distinct()
                     .filter(id -> !balances.containsKey(id))
@@ -228,8 +228,11 @@ public class TransactionService {
                 throw new AccountNotFoundException("No account found for id(s): " + missingAccountIds);
             }
 
-            boolean insufficient = legs.stream().anyMatch(leg ->
-                    leg.debitAmount().signum() > 0 && balances.get(leg.accountId()).compareTo(leg.debitAmount()) < 0);
+            boolean insufficient = legs.stream().anyMatch(leg -> {
+                LedgerDao.AccountBalance account = balances.get(leg.accountId());
+                return leg.debitAmount().signum() > 0 && !account.unlimited()
+                        && account.balance().compareTo(leg.debitAmount()) < 0;
+            });
 
             if (insufficient) {
                 idempotencyDao.markFailed(idempotencyId, "Insufficient balance");
