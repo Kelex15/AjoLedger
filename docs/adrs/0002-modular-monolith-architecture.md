@@ -4,7 +4,7 @@
 
 ## Context
 
-The backend is growing past a handful of domains now — `user`, `auth`, `account`, `transaction`, `ledger`, `fundingsource`, plus `system` for the cross-cutting stuff — and I need to decide how to lay that out. I want the code to read like a set of coherent business capabilities, so someone looking at it (an interviewer, or me in six months) can see the domain model without hunting across the tree. At the same time, this is a single deployable app on App Runner, and I have zero interest in paying for microservices' operational overhead on a solo project that doesn't need it.
+The backend is growing past a handful of domains now — `user`, `auth`, `account`, `transaction`, `ledger`, `fundingsource`, plus `system` for the cross-cutting stuff — and I need to decide how to lay that out. I want the code to read like a set of coherent business capabilities, so someone looking at it (me in six months, or anyone else) can see the domain model without hunting across the tree. At the same time, this is a single deployable app on App Runner, and I have zero interest in paying for microservices' operational overhead on a solo project that doesn't need it.
 
 ## Decision
 

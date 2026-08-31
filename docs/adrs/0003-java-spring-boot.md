@@ -12,7 +12,7 @@ Java 21 + Spring Boot.
 
 Money handling wants strong static typing — `BigDecimal` everywhere, never `double`/`float` — which catches a class of bugs at compile time that a dynamic language wouldn't. Spring also gives me both ends of the spectrum I need: JPA for the CRUD state that doesn't need special handling, and a clean drop down to `JdbcTemplate` for the ledger where I want to control and explain transaction isolation and locking directly (more on that in ADR 0004) — I'm not fighting the framework either way.
 
-The ecosystem lines up with what the project needs too: Spring Security for auth, Testcontainers and JUnit 5 for real-Postgres integration tests (especially concurrent writes), and a well-worn path to a containerized deploy on App Runner. And practically speaking, Java/Spring shows up constantly in backend and fintech-adjacent interview loops, so going deep here is directly useful beyond just this project.
+The ecosystem lines up with what the project needs too: Spring Security for auth, Testcontainers and JUnit 5 for real-Postgres integration tests (especially concurrent writes), and a well-worn path to a containerized deploy on App Runner. And practically speaking, Java/Spring is widely used across backend and fintech-adjacent engineering, so going deep here is directly useful beyond just this project.
 
 ## Alternatives considered
 
@@ -20,7 +20,7 @@ Node/TypeScript was the obvious one to weigh — huge ecosystem, fast to write �
 
 Kotlin got a real look since it's the same JVM ecosystem with nicer syntax. I passed on it mainly because Java is the safer, more recognized choice for this project's purpose, and the ergonomic wins Kotlin offers don't really move the needle on what I'm trying to demonstrate — this is about ledger correctness and concurrency, not language cleverness.
 
-Go was tempting for its concurrency model and simple deploys, but its ORM-equivalent ecosystem is thinner, and it's less often what backend interviews are actually probing for compared to an enterprise JVM stack. Also would've meant giving up Spring Security and Spring Data, which I didn't want to do.
+Go was tempting for its concurrency model and simple deploys, but its ORM-equivalent ecosystem is thinner, and it's a weaker fit for the enterprise JVM stack this project is meant to demonstrate. Also would've meant giving up Spring Security and Spring Data, which I didn't want to do.
 
 ## Consequences
 

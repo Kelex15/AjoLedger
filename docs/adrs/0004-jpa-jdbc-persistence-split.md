@@ -24,7 +24,7 @@ Using JPA uniformly, including for the ledger, was the default I moved away from
 
 Going hand-written SQL everywhere, even for the CRUD state, would've been overkill in the other direction — that data doesn't have unusual transactional needs, so the extra boilerplate wouldn't buy anything.
 
-I also considered jOOQ for the ledger instead of raw `JdbcTemplate` — more compile-time safety than string SQL — but decided the actual goal here is being able to walk through the ledger's SQL line by line in an interview, and a query-builder library gets in the way of that more than it helps.
+I also considered jOOQ for the ledger instead of raw `JdbcTemplate` — more compile-time safety than string SQL — but decided the actual goal here is being able to walk through the ledger's SQL line by line and explain exactly what runs and why, and a query-builder library gets in the way of that more than it helps.
 
 ## Consequences
 
