@@ -1,13 +1,15 @@
 package com.ajoledger.backend.transaction;
 
-import com.ajoledger.backend.account.UserAccount;
-import com.ajoledger.backend.account.UserAccountRepository;
 import com.ajoledger.backend.account.UserAccountType;
+import com.ajoledger.backend.account.entity.UserAccount;
 import com.ajoledger.backend.account.exception.AccountNotFoundException;
+import com.ajoledger.backend.account.repository.UserAccountRepository;
 import com.ajoledger.backend.ledger.LedgerDao;
 import com.ajoledger.backend.ledger.LedgerEntry;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.transaction.exception.IdempotencyKeyConflictException;
+import com.ajoledger.backend.transaction.idempotency.IdempotencyDao;
+import com.ajoledger.backend.transaction.idempotency.IdempotencyRecord;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

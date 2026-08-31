@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-import com.ajoledger.backend.account.UserAccount;
+import com.ajoledger.backend.account.entity.UserAccount;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity

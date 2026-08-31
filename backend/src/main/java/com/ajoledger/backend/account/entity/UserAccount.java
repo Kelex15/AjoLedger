@@ -1,5 +1,6 @@
-package com.ajoledger.backend.account;
+package com.ajoledger.backend.account.entity;
 
+import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.user.User;
 
 import jakarta.persistence.Column;

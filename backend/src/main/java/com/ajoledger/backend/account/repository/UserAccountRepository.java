@@ -1,10 +1,12 @@
-package com.ajoledger.backend.account;
+package com.ajoledger.backend.account.repository;
 
 import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import com.ajoledger.backend.account.UserAccountType;
+import com.ajoledger.backend.account.entity.UserAccount;
 import com.ajoledger.backend.account.exception.AccountNotFoundException;
 
 public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> {

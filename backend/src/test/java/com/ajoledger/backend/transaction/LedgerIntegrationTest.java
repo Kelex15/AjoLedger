@@ -21,10 +21,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import com.ajoledger.backend.account.AccountRepository;
 import com.ajoledger.backend.account.AccountService;
-import com.ajoledger.backend.account.UserAccount;
 import com.ajoledger.backend.account.UserAccountType;
+import com.ajoledger.backend.account.entity.UserAccount;
+import com.ajoledger.backend.account.repository.AccountRepository;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.ledger.LedgerDao;

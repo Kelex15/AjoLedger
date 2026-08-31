@@ -1,4 +1,4 @@
-package com.ajoledger.backend.account;
+package com.ajoledger.backend.account.entity;
 
 import com.ajoledger.backend.circle.Circle;
 

@@ -1,8 +1,8 @@
 package com.ajoledger.backend.funding;
 
-import com.ajoledger.backend.account.UserAccount;
-import com.ajoledger.backend.account.UserAccountRepository;
 import com.ajoledger.backend.account.UserAccountType;
+import com.ajoledger.backend.account.entity.UserAccount;
+import com.ajoledger.backend.account.repository.UserAccountRepository;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.transaction.Leg;
 import com.ajoledger.backend.transaction.Transaction;

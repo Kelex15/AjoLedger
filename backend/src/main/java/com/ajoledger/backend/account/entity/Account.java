@@ -1,4 +1,4 @@
-package com.ajoledger.backend.account;
+package com.ajoledger.backend.account.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.DiscriminatorColumn;
@@ -22,6 +22,8 @@ import lombok.experimental.SuperBuilder;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
+
+import com.ajoledger.backend.account.Currency;
 
 @Entity
 @Table(name = "account")
