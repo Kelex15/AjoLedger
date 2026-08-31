@@ -304,7 +304,19 @@ public class CircleService {
         }
     }
 
-    // ---- scheduler interface: called once per circle a scheduled job decides is due ----
+    // ---- scheduler interface: a scheduled job fetches due circles, then processes each one ----
+
+    /**
+     * Circles whose current round's contribution deadline (lastRoundAt + term weeks) has passed.
+     * The scheduler that calls this is blind to how "due" is decided - it just gets ids to process.
+     */
+    public List<UUID> findCirclesWithRoundsDueToday() {
+        LocalDateTime now = LocalDateTime.now();
+        return circleRepository.findByStatusAndLastRoundAtIsNotNull(CircleStatus.ACTIVE).stream()
+                .filter(circle -> !circle.getLastRoundAt().plusWeeks(circle.getTerm()).isAfter(now))
+                .map(Circle::getId)
+                .toList();
+    }
 
     /**
      * Orchestrates a round's contribution deadline for one circle: sweep unpaid members' SAVINGS,

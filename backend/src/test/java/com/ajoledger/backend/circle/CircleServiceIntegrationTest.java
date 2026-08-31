@@ -9,6 +9,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import com.ajoledger.backend.account.AccountService;
@@ -206,5 +208,34 @@ class CircleServiceIntegrationTest {
         BigDecimal gatedLoss = circleSizingPolicy.calculatePotentialGroupLoss(gatedCircle, creator, 1);
 
         assertThat(gatedLoss).isLessThan(openLoss);
+    }
+
+    @Test
+    void findCirclesWithRoundsDueTodayReturnsOnlyOverdueActiveCircles() {
+        User overdueCreator = createFundedUser(new BigDecimal("100.00"));
+        User overdueMember = createFundedUser(new BigDecimal("100.00"));
+        Circle overdueCircle = circleService.createCircle(overdueCreator.getId(), createRequest(2, false));
+        circleService.joinCircle(overdueMember.getId(), overdueCircle.getId());
+        pushPastDeadline(overdueCircle.getId());
+
+        User notDueCreator = createFundedUser(new BigDecimal("100.00"));
+        User notDueMember = createFundedUser(new BigDecimal("100.00"));
+        Circle notDueCircle = circleService.createCircle(notDueCreator.getId(), createRequest(2, false));
+        circleService.joinCircle(notDueMember.getId(), notDueCircle.getId()); // just activated, not due yet
+
+        Circle formingCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
+                createRequest(2, false)); // only the creator joined - still FORMING
+
+        List<UUID> due = circleService.findCirclesWithRoundsDueToday();
+
+        assertThat(due).contains(overdueCircle.getId());
+        assertThat(due).doesNotContain(notDueCircle.getId(), formingCircle.getId());
+    }
+
+    /** Pushes a circle's lastRoundAt far enough into the past that its current round counts as overdue. */
+    private void pushPastDeadline(UUID circleId) {
+        Circle circle = circleRepository.findById(circleId).orElseThrow();
+        circle.setLastRoundAt(LocalDateTime.now().minusWeeks(circle.getTerm() + 1L));
+        circleRepository.save(circle);
     }
 }

@@ -32,3 +32,5 @@ ajoledger:
     client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
   frontend:
     base-url: ${FRONTEND_BASE_URL:http://localhost:3000}
+  scheduler:
+    deadline-check-cron: ${DEADLINE_CHECK_CRON:0 0 3 * * *} # daily at 3am server time
