@@ -1,11 +1,19 @@
 package com.ajoledger.backend.circle;
 
-import com.ajoledger.backend.account.CircleAccount;
-import com.ajoledger.backend.account.CircleAccountRepository;
-import com.ajoledger.backend.account.UserAccount;
-import com.ajoledger.backend.account.UserAccountRepository;
+import com.ajoledger.backend.account.AccountService;
 import com.ajoledger.backend.account.UserAccountType;
+import com.ajoledger.backend.account.entity.CircleAccount;
+import com.ajoledger.backend.account.entity.UserAccount;
+import com.ajoledger.backend.account.repository.CircleAccountRepository;
+import com.ajoledger.backend.account.repository.UserAccountRepository;
+import com.ajoledger.backend.circle.dto.CircleCreateRequestDTO;
+import com.ajoledger.backend.circle.exception.CircleJoinNotAllowedException;
+import com.ajoledger.backend.circle.exception.CircleNotFoundException;
+import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
+import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
+import com.ajoledger.backend.circle.exception.InviteNotFoundException;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
+import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.transaction.Leg;
@@ -14,9 +22,14 @@ import com.ajoledger.backend.transaction.TransactionService;
 import com.ajoledger.backend.transaction.TransactionType;
 import com.ajoledger.backend.transaction.exception.LienWithdrawalBlockedException;
 import com.ajoledger.backend.user.User;
+import com.ajoledger.backend.user.UserRepository;
+import com.ajoledger.backend.user.exception.UserNotFoundException;
 
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -29,7 +42,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CircleService {
 
+    private static final Logger log = LoggerFactory.getLogger(CircleService.class);
+
     private static final BigDecimal BUFFER_FEE_RATE = new BigDecimal("0.01");
+    // Payout split: these can be tuned, they just need to sum to <= 1.
+    private static final BigDecimal PAYOUT_LIEN_RATE = new BigDecimal("0.15");
+    private static final BigDecimal PAYOUT_BUFFER_FEE_RATE = new BigDecimal("0.02");
 
     private final TransactionService transactionService;
     private final UserAccountRepository userAccountRepository;
@@ -37,7 +55,133 @@ public class CircleService {
     private final CircleAccountRepository circleAccountRepository;
     private final CircleMembershipRepository circleMembershipRepository;
     private final CirclePayoutRepository circlePayoutRepository;
+    private final CircleInviteRepository circleInviteRepository;
     private final CircleSizingPolicy circleSizingPolicy;
+    private final AccountService accountService;
+    private final UserRepository userRepository;
+
+    /** Creates the circle and its pot, then immediately enrolls the creator as its first member
+     * via joinCircle - the creator is expected to fund their own round-1 contribution like any
+     * other member, so if they can't, circle creation itself rolls back entirely. */
+    @Transactional
+    public Circle createCircle(UUID creatorUserId, CircleCreateRequestDTO dto) {
+        User creator = userRepository.findById(creatorUserId)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + creatorUserId));
+
+        Circle circle = circleRepository.save(Circle.builder()
+                .name(dto.getName())
+                .description(dto.getDescription())
+                .maxMembers(dto.getMaxMembers())
+                .term(dto.getTerm())
+                .createdBy(creator)
+                .contributionAmount(dto.getContributionAmount())
+                .currentRound(1)
+                .status(CircleStatus.FORMING)
+                .sizingPolicyType(CircleSizingPolicyType.FIXED_SIZE)
+                .gated(dto.isGated())
+                .build());
+
+        accountService.createCircleAccount(circle);
+        joinCircle(creatorUserId, circle.getId());
+        return circle;
+    }
+
+    public CircleInvite inviteToCircle(UUID circleId, UUID inviterUserId, String username, String email) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
+        if (!circle.isGated()) {
+            throw new CircleJoinNotAllowedException("Circle is not gated: " + circleId);
+        }
+        if (circle.getStatus() != CircleStatus.FORMING) {
+            throw new CircleJoinNotAllowedException("Circle is not open for invites: " + circleId);
+        }
+        if (!circle.getCreatedBy().getId().equals(inviterUserId)) {
+            throw new CircleJoinNotAllowedException("Only the circle's creator can invite members");
+        }
+
+        User inviter = circle.getCreatedBy();
+        User invitedUser = null;
+        if (username != null) {
+            invitedUser = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new UserNotFoundException("User not found: " + username));
+        } else if (email != null) {
+            invitedUser = userRepository.findByEmail(email).orElse(null);
+        }
+
+        CircleInvite invite = CircleInvite.builder()
+                .circle(circle)
+                .invitedBy(inviter)
+                .code(generateInviteCode())
+                .invitedUser(invitedUser)
+                .invitedEmail(invitedUser == null ? email : null)
+                .build();
+        return circleInviteRepository.save(invite);
+    }
+
+    @Transactional
+    public Circle redeemInvite(String code, UUID redeemingUserId) {
+        CircleInvite invite = circleInviteRepository.findByCode(code)
+                .orElseThrow(() -> new InviteNotFoundException("Invite not found"));
+        if (invite.getRedeemedAt() != null) {
+            throw new InviteAlreadyRedeemedException("Invite has already been redeemed");
+        }
+
+        User redeemer = userRepository.findById(redeemingUserId)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + redeemingUserId));
+
+        if (invite.getInvitedUser() != null) {
+            if (!invite.getInvitedUser().getId().equals(redeemingUserId)) {
+                throw new InviteIdentityMismatchException("This invite was not issued to you");
+            }
+        } else {
+            if (!invite.getInvitedEmail().equalsIgnoreCase(redeemer.getEmail())) {
+                throw new InviteIdentityMismatchException("This invite was not issued to you");
+            }
+            invite.setInvitedUser(redeemer);
+        }
+
+        invite.setRedeemedAt(LocalDateTime.now());
+        circleInviteRepository.save(invite);
+        return invite.getCircle();
+    }
+
+    @Transactional
+    public CircleMembership joinCircle(UUID userId, UUID circleId) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
+
+        if (!circleSizingPolicy.canMemberJoin(circle, user)) {
+            throw new CircleJoinNotAllowedException("Not eligible to join circle: " + circleId);
+        }
+
+        int position = 1 + circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE).size();
+        CircleMembership membership = circleMembershipRepository.save(CircleMembership.builder()
+                .circle(circle)
+                .user(user)
+                .position(position)
+                .status(MembershipStatus.ACTIVE)
+                .build());
+
+        CircleAccount pot = circleAccountRepository.requireByCircleId(circleId);
+        postContribution(userId, circleId, pot.getId(), circle.getContributionAmount(),
+                circleId + ":" + userId + ":join");
+        membership.setLastContributedRound(circle.getCurrentRound());
+        circleMembershipRepository.save(membership);
+
+        if (position == circle.getMaxMembers()) {
+            circle.setStatus(CircleStatus.ACTIVE);
+            circleRepository.save(circle);
+            resolveRoundIfComplete(circleId);
+        }
+
+        return membership;
+    }
+
+    private String generateInviteCode() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+    }
 
     public Transaction postContribution(UUID userId, UUID circleId, UUID circlePotAccountId,
                                          BigDecimal amount, String idempotencyKey) {
@@ -55,14 +199,21 @@ public class CircleService {
     }
 
     public Transaction postPayout(UUID circlePotAccountId, UUID circlePayoutId, UUID recipientUserId,
-                                   BigDecimal grossAmount, BigDecimal withheldAmount, String idempotencyKey) {
+                                   BigDecimal grossAmount, String idempotencyKey) {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(recipientUserId, UserAccountType.SAVINGS);
         UserAccount lien = userAccountRepository.requireByUserIdAndType(recipientUserId, UserAccountType.LIEN);
-        BigDecimal net = grossAmount.subtract(withheldAmount);
+        UserAccount buffer = userAccountRepository.requireByUserIdAndType(
+                Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
+
+        BigDecimal lienShare = grossAmount.multiply(PAYOUT_LIEN_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal bufferFee = grossAmount.multiply(PAYOUT_BUFFER_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal net = grossAmount.subtract(lienShare).subtract(bufferFee);
+
         List<Leg> legs = List.of(
                 new Leg(circlePotAccountId, grossAmount, BigDecimal.ZERO),
                 new Leg(savings.getId(), BigDecimal.ZERO, net),
-                new Leg(lien.getId(), BigDecimal.ZERO, withheldAmount));
+                new Leg(lien.getId(), BigDecimal.ZERO, lienShare),
+                new Leg(buffer.getId(), BigDecimal.ZERO, bufferFee));
         return transactionService.postLedgerTransaction(idempotencyKey, "PAYOUT", TransactionType.PAYOUT, grossAmount,
                 "Payout for circle payout " + circlePayoutId, legs,
                 transaction -> {
@@ -99,11 +250,13 @@ public class CircleService {
 
     /**
      * Default waterfall (design/v1.md Section 5, 3 steps): seize LIEN first, then the shared
-     * buffer covers the remainder. If the buffer also can't cover it, GROUP_SHORTFALL_ABSORPTION's
-     * crediting logic is a follow-on circle-settlement design question, not implemented here.
+     * buffer covers the remainder - both legs restore the circle pot directly, standing in for
+     * the contribution the defaulting member should have made. If the buffer also can't cover
+     * it, GROUP_SHORTFALL_ABSORPTION's crediting logic is a follow-on circle-settlement design
+     * question, not implemented here.
      */
-    public List<Transaction> postDefaultWaterfall(UUID userId, UUID circleMembershipId, BigDecimal groupLoss,
-                                                    String idempotencyKey) {
+    public List<Transaction> postDefaultWaterfall(UUID userId, UUID circleMembershipId, UUID circlePotAccountId,
+                                                    BigDecimal groupLoss, String idempotencyKey) {
         UserAccount lien = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.LIEN);
         UserAccount buffer = userAccountRepository.requireByUserIdAndType(
                 Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
@@ -117,27 +270,38 @@ public class CircleService {
         if (seizedFromLien.signum() > 0) {
             List<Leg> seizureLegs = List.of(
                     new Leg(lien.getId(), seizedFromLien, BigDecimal.ZERO),
-                    new Leg(buffer.getId(), BigDecimal.ZERO, seizedFromLien));
+                    new Leg(circlePotAccountId, BigDecimal.ZERO, seizedFromLien));
             transactions.add(transactionService.postLedgerTransaction(idempotencyKey + ":lien-seizure", "LIEN_SEIZURE",
                     TransactionType.LIEN_SEIZURE, seizedFromLien,
                     "Lien seizure for membership " + circleMembershipId, seizureLegs));
         }
 
         if (remainingLoss.signum() > 0) {
-            if (buffer.getBalance().compareTo(remainingLoss) < 0) {
-                throw new InsufficientBalanceException(
-                        "Shared insurance buffer cannot cover remaining default loss for membership " + circleMembershipId);
+            BigDecimal bufferPayout = buffer.getBalance().min(remainingLoss);
+            if (bufferPayout.signum() > 0) {
+                List<Leg> bufferLegs = List.of(
+                        new Leg(buffer.getId(), bufferPayout, BigDecimal.ZERO),
+                        new Leg(circlePotAccountId, BigDecimal.ZERO, bufferPayout));
+                transactions.add(transactionService.postLedgerTransaction(idempotencyKey + ":buffer-payout", "BUFFER_PAYOUT_TO_COVER_DEFAULT",
+                        TransactionType.BUFFER_PAYOUT_TO_COVER_DEFAULT, bufferPayout,
+                        "Buffer payout covering default for membership " + circleMembershipId, bufferLegs));
             }
-            UserAccount recipientSavings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
-            List<Leg> bufferLegs = List.of(
-                    new Leg(buffer.getId(), remainingLoss, BigDecimal.ZERO),
-                    new Leg(recipientSavings.getId(), BigDecimal.ZERO, remainingLoss));
-            transactions.add(transactionService.postLedgerTransaction(idempotencyKey + ":buffer-payout", "BUFFER_PAYOUT_TO_COVER_DEFAULT",
-                    TransactionType.BUFFER_PAYOUT_TO_COVER_DEFAULT, remainingLoss,
-                    "Buffer payout covering default for membership " + circleMembershipId, bufferLegs));
+            flagUnrecoveredShortfall(circleMembershipId, remainingLoss.subtract(bufferPayout));
         }
 
         return transactions;
+    }
+
+    /**
+     * GROUP_SHORTFALL_ABSORPTION: how the group absorbs what neither lien nor buffer covered
+     * isn't designed yet - see design/v1.md Section 5. Not thrown as a failure since the
+     * waterfall itself succeeded as far as it can; flagged for now.
+     */
+    private void flagUnrecoveredShortfall(UUID circleMembershipId, BigDecimal unrecoveredShortfall) {
+        if (unrecoveredShortfall.signum() > 0) {
+            log.warn("Circle default shortfall not fully covered for membership {}: ${} unrecovered after lien + buffer",
+                    circleMembershipId, unrecoveredShortfall);
+        }
     }
 
     // ---- scheduler interface: called once per circle a scheduled job decides is due ----
@@ -173,6 +337,7 @@ public class CircleService {
     private void markNonPayers(UUID circleId) {
         Circle circle = circleRepository.findById(circleId)
                 .orElseThrow(() -> new IllegalStateException("Circle not found: " + circleId));
+        CircleAccount pot = circleAccountRepository.requireByCircleId(circleId);
 
         for (CircleMembership membership : unpaidActiveMemberships(circle)) {
             User user = membership.getUser();
@@ -181,9 +346,11 @@ public class CircleService {
             if (alreadyPaidOut) {
                 membership.setStatus(MembershipStatus.DEFAULTED);
                 circleMembershipRepository.save(membership);
+
                 int position = membership.getPosition() != null ? membership.getPosition() : 0;
                 BigDecimal groupLoss = circleSizingPolicy.calculatePotentialGroupLoss(circle, user, position);
-                postDefaultWaterfall(user.getId(), membership.getId(), groupLoss,
+                
+                postDefaultWaterfall(user.getId(), membership.getId(), pot.getId(), groupLoss,
                         circleId + ":" + membership.getId() + ":default-round-" + circle.getCurrentRound());
             } else {
                 membership.setStatus(MembershipStatus.WITHDRAWN);
@@ -203,13 +370,26 @@ public class CircleService {
             return;
         }
 
-        UUID recipientUserId = getCurrentPayoutReceiver(circleId);
-        if (recipientUserId == null) {
+        CircleMembership recipientMembership = getCurrentPayoutReceiver(circle);
+        if (recipientMembership == null) {
             return;
         }
 
-        // TODO: build the CirclePayout row, withheld-amount split, and call postPayout - blocked
-        // on the same payout-position design this stub is standing in for.
+        User recipient = recipientMembership.getUser();
+        CircleAccount pot = circleAccountRepository.requireByCircleId(circleId);
+        // Pay out what the pot actually holds, not calculatePotSize's theoretical figure - the
+        // pot never holds the full contributionAmount * maxMembers since postContribution skims
+        // a buffer fee off each contribution before crediting it.
+        BigDecimal grossAmount = pot.getBalance();
+
+        CirclePayout payout = circlePayoutRepository.save(CirclePayout.builder()
+                .circle(circle)
+                .recipient(recipient)
+                .roundNumber(circle.getCurrentRound())
+                .build());
+
+        postPayout(pot.getId(), payout.getId(), recipient.getId(), grossAmount,
+                circleId + ":" + recipientMembership.getId() + ":payout-round-" + circle.getCurrentRound());
 
         circle.setCurrentRound(circle.getCurrentRound() + 1);
         circle.setLastRoundAt(LocalDateTime.now());
@@ -222,8 +402,11 @@ public class CircleService {
                 .toList();
     }
 
-    /** Who receives this circle's current round payout. Payout-position assignment isn't designed yet. */
-    private UUID getCurrentPayoutReceiver(UUID circleId) {
-        return null;
+    /** Who receives this circle's current round payout: the active membership assigned to this round's position. */
+    private CircleMembership getCurrentPayoutReceiver(Circle circle) {
+        return circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE).stream()
+                .filter(m -> m.getPosition() != null && m.getPosition() == circle.getCurrentRound())
+                .findFirst()
+                .orElse(null);
     }
 }

@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.user.User;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
@@ -79,6 +80,10 @@ public class Circle {
     @Enumerated(EnumType.STRING)
     @Column(name = "sizing_policy_type", nullable = false, updatable = false)
     private CircleSizingPolicyType sizingPolicyType;
+
+    /** Membership requires a redeemed invite (see CircleInvite) instead of being open to anyone. */
+    @Column(nullable = false, updatable = false)
+    private boolean gated;
 
     @JsonIgnore
     @OneToMany(mappedBy = "circle")

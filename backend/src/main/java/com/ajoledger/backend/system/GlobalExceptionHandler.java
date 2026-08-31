@@ -17,9 +17,15 @@ import com.ajoledger.backend.auth.exception.EmailNotVerifiedException;
 import com.ajoledger.backend.auth.exception.InvalidCredentialsException;
 import com.ajoledger.backend.auth.exception.InvalidOrExpiredTokenException;
 import com.ajoledger.backend.auth.exception.RefreshTokenReuseDetectedException;
+import com.ajoledger.backend.circle.exception.CircleJoinNotAllowedException;
+import com.ajoledger.backend.circle.exception.CircleNotFoundException;
+import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
+import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
+import com.ajoledger.backend.circle.exception.InviteNotFoundException;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.transaction.exception.IdempotencyKeyConflictException;
 import com.ajoledger.backend.transaction.exception.LienWithdrawalBlockedException;
+import com.ajoledger.backend.user.exception.UserNotFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -67,6 +73,36 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(LienWithdrawalBlockedException.class)
     public ResponseEntity<MessageResponseDTO> handleLienWithdrawalBlocked(LienWithdrawalBlockedException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ResponseEntity<MessageResponseDTO> handleUserNotFound(UserNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(CircleNotFoundException.class)
+    public ResponseEntity<MessageResponseDTO> handleCircleNotFound(CircleNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(CircleJoinNotAllowedException.class)
+    public ResponseEntity<MessageResponseDTO> handleCircleJoinNotAllowed(CircleJoinNotAllowedException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(InviteNotFoundException.class)
+    public ResponseEntity<MessageResponseDTO> handleInviteNotFound(InviteNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(InviteAlreadyRedeemedException.class)
+    public ResponseEntity<MessageResponseDTO> handleInviteAlreadyRedeemed(InviteAlreadyRedeemedException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(InviteIdentityMismatchException.class)
+    public ResponseEntity<MessageResponseDTO> handleInviteIdentityMismatch(InviteIdentityMismatchException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new MessageResponseDTO(e.getMessage()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
