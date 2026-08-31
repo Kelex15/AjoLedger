@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.ajoledger.backend.account.AccountService;
 import com.ajoledger.backend.auth.audit.AuditEventType;
 import com.ajoledger.backend.auth.audit.AuditLog;
 import com.ajoledger.backend.auth.audit.AuditLogRepository;
@@ -45,12 +46,13 @@ public class AuthService {
     private final GoogleTokenVerifierService googleTokenVerifierService;
     private final EmailSender emailSender;
     private final AppProperties appProperties;
+    private final AccountService accountService;
 
     public AuthService(UserRepository userRepository, UserAuthRepository userAuthRepository,
                         AuditLogRepository auditLogRepository, PasswordEncoder passwordEncoder,
                         JwtService jwtService, RefreshTokenService refreshTokenService,
                         GoogleTokenVerifierService googleTokenVerifierService, EmailSender emailSender,
-                        AppProperties appProperties) {
+                        AppProperties appProperties, AccountService accountService) {
         this.userRepository = userRepository;
         this.userAuthRepository = userAuthRepository;
         this.auditLogRepository = auditLogRepository;
@@ -60,6 +62,7 @@ public class AuthService {
         this.googleTokenVerifierService = googleTokenVerifierService;
         this.emailSender = emailSender;
         this.appProperties = appProperties;
+        this.accountService = accountService;
     }
 
     @Transactional
@@ -137,6 +140,7 @@ public class AuthService {
         userAuth.setVerificationToken(null);
         userAuth.setVerificationTokenExpiresAt(null);
         userAuthRepository.save(userAuth);
+        accountService.provisionDefaultAccounts(userAuth.getUser());
 
         audit(userAuth.getUser(), AuditEventType.EMAIL_VERIFIED, null);
 

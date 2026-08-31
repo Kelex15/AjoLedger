@@ -34,6 +34,14 @@ public class AccountService {
         return userAccountRepository.save(account);
     }
 
+    /** Every new user gets these three accounts: CHECKING (external funding lands here),
+     * SAVINGS (circle contributions/payouts run through here), and LIEN (collateral/reserve). */
+    public void provisionDefaultAccounts(User user) {
+        createUserAccount(user, UserAccountType.CHECKING);
+        createUserAccount(user, UserAccountType.SAVINGS);
+        createUserAccount(user, UserAccountType.LIEN);
+    }
+
     public CircleAccount createCircleAccount(Circle circle) {
         CircleAccount account = CircleAccount.builder()
                 .accountNumber(generateAccountNumber())
