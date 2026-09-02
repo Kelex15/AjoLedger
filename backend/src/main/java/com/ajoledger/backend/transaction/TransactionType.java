@@ -5,6 +5,7 @@ public enum TransactionType {
     WITHDRAWAL,
     TRANSFER,
     CONTRIBUTION,
+    CONTRIBUTION_REFUND,
     PAYOUT,
     LIEN_HOLD,
     LIEN_WITHDRAWAL,

@@ -7,13 +7,13 @@ import com.ajoledger.backend.account.entity.UserAccount;
 import com.ajoledger.backend.account.repository.CircleAccountRepository;
 import com.ajoledger.backend.account.repository.UserAccountRepository;
 import com.ajoledger.backend.circle.dto.CircleCreateRequestDTO;
-import com.ajoledger.backend.circle.exception.CircleJoinNotAllowedException;
+import com.ajoledger.backend.circle.exception.CircleActionNotAllowedException;
+import com.ajoledger.backend.circle.exception.CircleCreatorRequiredException;
 import com.ajoledger.backend.circle.exception.CircleNotFoundException;
 import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
 import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
 import com.ajoledger.backend.circle.exception.InviteNotFoundException;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
-import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.transaction.Leg;
@@ -36,6 +36,7 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -56,13 +57,16 @@ public class CircleService {
     private final CircleMembershipRepository circleMembershipRepository;
     private final CirclePayoutRepository circlePayoutRepository;
     private final CircleInviteRepository circleInviteRepository;
-    private final CircleSizingPolicy circleSizingPolicy;
+    private final Map<String, CircleSizingPolicy> sizingPoliciesByType;
     private final AccountService accountService;
     private final UserRepository userRepository;
 
-    /** Creates the circle and its pot, then immediately enrolls the creator as its first member
-     * via joinCircle - the creator is expected to fund their own round-1 contribution like any
-     * other member, so if they can't, circle creation itself rolls back entirely. */
+    private CircleSizingPolicy resolveSizingPolicy(Circle circle) {
+        return sizingPoliciesByType.get(circle.getSizingPolicyType().name());
+    }
+
+    /** The creator funds their own round-1 contribution like any other member via joinCircle,
+     * so creation rolls back entirely if they can't afford it. */
     @Transactional
     public Circle createCircle(UUID creatorUserId, CircleCreateRequestDTO dto) {
         User creator = userRepository.findById(creatorUserId)
@@ -72,12 +76,14 @@ public class CircleService {
                 .name(dto.getName())
                 .description(dto.getDescription())
                 .maxMembers(dto.getMaxMembers())
+                .minMembers(dto.getMinMembers())
+                .enrollmentDeadline(dto.getEnrollmentDeadline())
                 .term(dto.getTerm())
                 .createdBy(creator)
                 .contributionAmount(dto.getContributionAmount())
                 .currentRound(1)
                 .status(CircleStatus.FORMING)
-                .sizingPolicyType(CircleSizingPolicyType.FIXED_SIZE)
+                .sizingPolicyType(dto.getSizingPolicyType())
                 .gated(dto.isGated())
                 .build());
 
@@ -90,13 +96,13 @@ public class CircleService {
         Circle circle = circleRepository.findById(circleId)
                 .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
         if (!circle.isGated()) {
-            throw new CircleJoinNotAllowedException("Circle is not gated: " + circleId);
+            throw new CircleActionNotAllowedException("Circle is not gated: " + circleId);
         }
         if (circle.getStatus() != CircleStatus.FORMING) {
-            throw new CircleJoinNotAllowedException("Circle is not open for invites: " + circleId);
+            throw new CircleActionNotAllowedException("Circle is not open for invites: " + circleId);
         }
         if (!circle.getCreatedBy().getId().equals(inviterUserId)) {
-            throw new CircleJoinNotAllowedException("Only the circle's creator can invite members");
+            throw new CircleCreatorRequiredException("Only the circle's creator can invite members");
         }
 
         User inviter = circle.getCreatedBy();
@@ -152,8 +158,8 @@ public class CircleService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
 
-        if (!circleSizingPolicy.canMemberJoin(circle, user)) {
-            throw new CircleJoinNotAllowedException("Not eligible to join circle: " + circleId);
+        if (!resolveSizingPolicy(circle).canMemberJoin(circle, user)) {
+            throw new CircleActionNotAllowedException("Not eligible to join circle: " + circleId);
         }
 
         int position = 1 + circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE).size();
@@ -171,12 +177,19 @@ public class CircleService {
         circleMembershipRepository.save(membership);
 
         if (position == circle.getMaxMembers()) {
-            circle.setStatus(CircleStatus.ACTIVE);
-            circleRepository.save(circle);
-            resolveRoundIfComplete(circleId);
+            activateCircle(circle);
         }
 
         return membership;
+    }
+
+    private void activateCircle(Circle circle) {
+        int lockedCount = circleMembershipRepository
+                .findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE).size();
+        circle.setLockedMemberCount(lockedCount);
+        circle.setStatus(CircleStatus.ACTIVE);
+        circleRepository.save(circle);
+        resolveRoundIfComplete(circle.getId());
     }
 
     private String generateInviteCode() {
@@ -196,6 +209,22 @@ public class CircleService {
                 new Leg(buffer.getId(), BigDecimal.ZERO, fee));
         return transactionService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION", TransactionType.CONTRIBUTION,
                 amount, "Contribution to circle " + circleId, legs);
+    }
+
+    /** Exact inverse of postContribution's legs. Full original amount back, including the fee. */
+    public Transaction postContributionRefund(UUID userId, UUID circleId, UUID circlePotAccountId,
+                                               BigDecimal amount, String idempotencyKey) {
+        UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
+        UserAccount buffer = userAccountRepository.requireByUserIdAndType(
+                Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
+        BigDecimal fee = amount.multiply(BUFFER_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal netFromPot = amount.subtract(fee);
+        List<Leg> legs = List.of(
+                new Leg(circlePotAccountId, netFromPot, BigDecimal.ZERO),
+                new Leg(buffer.getId(), fee, BigDecimal.ZERO),
+                new Leg(savings.getId(), BigDecimal.ZERO, amount));
+        return transactionService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION_REFUND",
+                TransactionType.CONTRIBUTION_REFUND, amount, "Contribution refund for circle " + circleId, legs);
     }
 
     public Transaction postPayout(UUID circlePotAccountId, UUID circlePayoutId, UUID recipientUserId,
@@ -248,13 +277,8 @@ public class CircleService {
                 amount, "Lien withdrawal", legs);
     }
 
-    /**
-     * Default waterfall (design/v1.md Section 5, 3 steps): seize LIEN first, then the shared
-     * buffer covers the remainder - both legs restore the circle pot directly, standing in for
-     * the contribution the defaulting member should have made. If the buffer also can't cover
-     * it, GROUP_SHORTFALL_ABSORPTION's crediting logic is a follow-on circle-settlement design
-     * question, not implemented here.
-     */
+    /** Default waterfall (design/v1.md §5): lien seized first, then the buffer covers the rest.
+     * Both legs restore the pot directly. GROUP_SHORTFALL_ABSORPTION isn't implemented here. */
     public List<Transaction> postDefaultWaterfall(UUID userId, UUID circleMembershipId, UUID circlePotAccountId,
                                                     BigDecimal groupLoss, String idempotencyKey) {
         UserAccount lien = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.LIEN);
@@ -292,11 +316,8 @@ public class CircleService {
         return transactions;
     }
 
-    /**
-     * GROUP_SHORTFALL_ABSORPTION: how the group absorbs what neither lien nor buffer covered
-     * isn't designed yet - see design/v1.md Section 5. Not thrown as a failure since the
-     * waterfall itself succeeded as far as it can; flagged for now.
-     */
+    /** GROUP_SHORTFALL_ABSORPTION isn't designed yet (design/v1.md §5). Logged, not thrown,
+     * since the waterfall itself did all it could. */
     private void flagUnrecoveredShortfall(UUID circleMembershipId, BigDecimal unrecoveredShortfall) {
         if (unrecoveredShortfall.signum() > 0) {
             log.warn("Circle default shortfall not fully covered for membership {}: ${} unrecovered after lien + buffer",
@@ -304,12 +325,67 @@ public class CircleService {
         }
     }
 
+    /** Refunds every current member's round-1 contribution in full. The circle never activated. */
+    private void dissolveCircle(Circle circle) {
+        UUID circleId = circle.getId();
+        CircleAccount pot = circleAccountRepository.requireByCircleId(circleId);
+
+        for (CircleMembership membership : circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE)) {
+            UUID userId = membership.getUser().getId();
+            postContributionRefund(userId, circleId, pot.getId(), circle.getContributionAmount(),
+                    circleId + ":" + userId + ":dissolve-refund");
+            membership.setStatus(MembershipStatus.DISSOLVED);
+            circleMembershipRepository.save(membership);
+        }
+
+        circle.setStatus(CircleStatus.DISSOLVED);
+        circleRepository.save(circle);
+    }
+
+    /** Creator-initiated cancellation of any still-FORMING circle, fixed-size included. */
+    @Transactional
+    public Circle cancelCircle(UUID circleId, UUID requestingUserId) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
+        if (!circle.getCreatedBy().getId().equals(requestingUserId)) {
+            throw new CircleCreatorRequiredException("Only the circle's creator can cancel it");
+        }
+        if (circle.getStatus() != CircleStatus.FORMING) {
+            throw new CircleActionNotAllowedException("Circle can only be cancelled while still forming: " + circleId);
+        }
+        dissolveCircle(circle);
+        return circle;
+    }
+
     // ---- scheduler interface: a scheduled job fetches due circles, then processes each one ----
 
-    /**
-     * Circles whose current round's contribution deadline (lastRoundAt + term weeks) has passed.
-     * The scheduler that calls this is blind to how "due" is decided - it just gets ids to process.
-     */
+    /** FIXED_SIZE circles never have an enrollmentDeadline, so they're naturally excluded here. */
+    @SuppressWarnings("null")
+    public List<UUID> findCirclesWithClosedEnrollment() {
+        LocalDateTime now = LocalDateTime.now();
+        return circleRepository.findByStatusAndEnrollmentDeadlineIsNotNull(CircleStatus.FORMING).stream()
+                .filter(circle -> !circle.getEnrollmentDeadline().isAfter(now))
+                .map(Circle::getId)
+                .toList();
+    }
+
+    /** Locks in whoever joined by the deadline if there's enough of them, otherwise dissolves. */
+    @Transactional
+    public void closeEnrollment(UUID circleId) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
+        int activeCount = circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE).size();
+        int effectiveMinimum = circle.getMinMembers() != null ? circle.getMinMembers() : Constants.Circle.DEFAULT_MIN_MEMBERS;
+
+        if (activeCount >= effectiveMinimum) {
+            activateCircle(circle);
+        } else {
+            dissolveCircle(circle);
+        }
+    }
+
+    /** The scheduler is blind to how "due" is decided. It just gets ids to process. */
+    @SuppressWarnings("null")
     public List<UUID> findCirclesWithRoundsDueToday() {
         LocalDateTime now = LocalDateTime.now();
         return circleRepository.findByStatusAndLastRoundAtIsNotNull(CircleStatus.ACTIVE).stream()
@@ -318,10 +394,6 @@ public class CircleService {
                 .toList();
     }
 
-    /**
-     * Orchestrates a round's contribution deadline for one circle: sweep unpaid members' SAVINGS,
-     * mark whoever's still unpaid, then resolve the round if it's now fully funded.
-     */
     public void processRoundDeadline(UUID circleId) {
         sweepUnpaidContributions(circleId);
         markNonPayers(circleId);
@@ -341,7 +413,7 @@ public class CircleService {
                 membership.setLastContributedRound(circle.getCurrentRound());
                 circleMembershipRepository.save(membership);
             } catch (InsufficientBalanceException e) {
-                // left unpaid - markNonPayers handles it next
+                // left unpaid. markNonPayers handles it next.
             }
         }
     }
@@ -360,7 +432,7 @@ public class CircleService {
                 circleMembershipRepository.save(membership);
 
                 int position = membership.getPosition() != null ? membership.getPosition() : 0;
-                BigDecimal groupLoss = circleSizingPolicy.calculatePotentialGroupLoss(circle, user, position);
+                BigDecimal groupLoss = resolveSizingPolicy(circle).calculatePotentialGroupLoss(circle, user, position);
                 
                 postDefaultWaterfall(user.getId(), membership.getId(), pot.getId(), groupLoss,
                         circleId + ":" + membership.getId() + ":default-round-" + circle.getCurrentRound());
@@ -389,9 +461,9 @@ public class CircleService {
 
         User recipient = recipientMembership.getUser();
         CircleAccount pot = circleAccountRepository.requireByCircleId(circleId);
-        // Pay out what the pot actually holds, not calculatePotSize's theoretical figure - the
-        // pot never holds the full contributionAmount * maxMembers since postContribution skims
-        // a buffer fee off each contribution before crediting it.
+        // Pay out what the pot actually holds, not calculatePotSize's theoretical figure. The
+        // pot never holds the full contributionAmount because postContribution skims a fee
+        // off each contribution before crediting it.
         BigDecimal grossAmount = pot.getBalance();
 
         CirclePayout payout = circlePayoutRepository.save(CirclePayout.builder()

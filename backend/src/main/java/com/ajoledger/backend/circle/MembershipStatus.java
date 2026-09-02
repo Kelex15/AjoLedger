@@ -2,6 +2,7 @@ package com.ajoledger.backend.circle;
 
 public enum MembershipStatus {
     ACTIVE,
-    WITHDRAWN, // exit before receiving payout — forfeits standing, no waterfall
-    DEFAULTED  // stopped contributing after receiving payout — triggers the default waterfall
+    WITHDRAWN, // exit before receiving payout. Forfeits standing, no waterfall.
+    DEFAULTED, // stopped contributing after receiving payout. Triggers the default waterfall.
+    DISSOLVED  // the circle failed to form or was cancelled. Not the member's doing, refunded in full.
 }

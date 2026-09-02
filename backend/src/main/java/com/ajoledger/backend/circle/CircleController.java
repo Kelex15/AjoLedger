@@ -55,4 +55,11 @@ public class CircleController {
         CircleMembership membership = circleService.joinCircle(currentUserId, circleId);
         return ResponseEntity.status(HttpStatus.CREATED).body(CircleMembershipResponseDTO.fromMembership(membership));
     }
+
+    @PostMapping(path = "/{circleId}/cancel", version = "1")
+    public ResponseEntity<CircleResponseDTO> cancel(@AuthenticationPrincipal UUID currentUserId,
+                                                      @PathVariable UUID circleId) {
+        Circle circle = circleService.cancelCircle(circleId, currentUserId);
+        return ResponseEntity.ok(CircleResponseDTO.fromCircle(circle));
+    }
 }

@@ -51,9 +51,26 @@ public class Circle {
     @Column(nullable = false)
     private String description;
 
+    /** FIXED_SIZE: the required member count. OPEN_ENROLLMENT: the upper cap, hitting it closes
+     * enrollment early. Never changes after creation. See lockedMemberCount for the actual
+     * frozen size once enrollment closes. */
     @NotNull(message = "Max members is required")
     @Column(name = "max_members", nullable = false, updatable = false)
     private Integer maxMembers;
+
+    /** OPEN_ENROLLMENT only: the creator's own floor. Null means Constants.Circle.DEFAULT_MIN_MEMBERS applies. */
+    @Column(name = "min_members", updatable = false)
+    private Integer minMembers;
+
+    /** OPEN_ENROLLMENT only: when enrollment closes, checked by CircleEnrollmentScheduler. */
+    @Column(name = "enrollment_deadline", updatable = false)
+    private LocalDateTime enrollmentDeadline;
+
+    /** Null while FORMING. Set once when enrollment closes, unlike maxMembers/minMembers, which
+     * stay the creator's original declared bounds. Don't mark this updatable = false. Its value
+     * isn't known until well after the row is first created. */
+    @Column(name = "locked_member_count")
+    private Integer lockedMemberCount;
 
     @NotNull(message = "Term is required")
     @Column(nullable = false)
@@ -69,7 +86,7 @@ public class Circle {
     @Column(name = "current_round", nullable = false)
     private int currentRound;
 
-    /** When the last round completed (payout resolved); anchors the next round's due date (lastRoundAt + term). */
+    /** When the last round completed. Anchors the next round's due date (lastRoundAt + term). */
     @Column(name = "last_round_at")
     private LocalDateTime lastRoundAt;
 

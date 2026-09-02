@@ -17,7 +17,8 @@ import com.ajoledger.backend.auth.exception.EmailNotVerifiedException;
 import com.ajoledger.backend.auth.exception.InvalidCredentialsException;
 import com.ajoledger.backend.auth.exception.InvalidOrExpiredTokenException;
 import com.ajoledger.backend.auth.exception.RefreshTokenReuseDetectedException;
-import com.ajoledger.backend.circle.exception.CircleJoinNotAllowedException;
+import com.ajoledger.backend.circle.exception.CircleActionNotAllowedException;
+import com.ajoledger.backend.circle.exception.CircleCreatorRequiredException;
 import com.ajoledger.backend.circle.exception.CircleNotFoundException;
 import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
 import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
@@ -85,9 +86,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new MessageResponseDTO(e.getMessage()));
     }
 
-    @ExceptionHandler(CircleJoinNotAllowedException.class)
-    public ResponseEntity<MessageResponseDTO> handleCircleJoinNotAllowed(CircleJoinNotAllowedException e) {
+    @ExceptionHandler(CircleActionNotAllowedException.class)
+    public ResponseEntity<MessageResponseDTO> handleCircleActionNotAllowed(CircleActionNotAllowedException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(CircleCreatorRequiredException.class)
+    public ResponseEntity<MessageResponseDTO> handleCircleCreatorRequired(CircleCreatorRequiredException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new MessageResponseDTO(e.getMessage()));
     }
 
     @ExceptionHandler(InviteNotFoundException.class)

@@ -21,6 +21,7 @@ import com.ajoledger.backend.circle.CircleRepository;
 import com.ajoledger.backend.circle.CircleService;
 import com.ajoledger.backend.circle.MembershipStatus;
 import com.ajoledger.backend.circle.dto.CircleCreateRequestDTO;
+import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.user.User;
@@ -72,6 +73,7 @@ class CircleRoundSchedulerIntegrationTest {
         CircleCreateRequestDTO dto = new CircleCreateRequestDTO();
         dto.setName("Test Circle");
         dto.setDescription("A circle for testing");
+        dto.setSizingPolicyType(CircleSizingPolicyType.FIXED_SIZE);
         dto.setMaxMembers(2);
         dto.setTerm(4);
         dto.setContributionAmount(new BigDecimal("100.00"));

@@ -1,0 +1,23 @@
+package com.ajoledger.backend.circle.policy;
+
+import org.springframework.stereotype.Component;
+
+import java.time.LocalDateTime;
+
+import com.ajoledger.backend.circle.Circle;
+import com.ajoledger.backend.circle.CircleInviteRepository;
+import com.ajoledger.backend.circle.CircleMembershipRepository;
+
+@Component("OPEN_ENROLLMENT")
+public class OpenEnrollmentCircleSizingPolicy extends CircleSizingPolicy {
+
+    public OpenEnrollmentCircleSizingPolicy(CircleInviteRepository circleInviteRepository,
+                                             CircleMembershipRepository circleMembershipRepository) {
+        super(circleInviteRepository, circleMembershipRepository);
+    }
+
+    @Override
+    protected boolean hasEnrollmentRoom(Circle circle) {
+        return isBelowCap(circle) && !LocalDateTime.now().isAfter(circle.getEnrollmentDeadline());
+    }
+}

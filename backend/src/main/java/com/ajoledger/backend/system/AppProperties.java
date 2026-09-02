@@ -22,6 +22,6 @@ public record AppProperties(Jwt jwt, Cors cors, Security security, Google google
     public record Frontend(String baseUrl) {
     }
 
-    public record Scheduler(String deadlineCheckCron) {
+    public record Scheduler(String deadlineCheckCron, String enrollmentCloseCron) {
     }
 }

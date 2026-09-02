@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -11,15 +12,18 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.ajoledger.backend.account.AccountService;
 import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.circle.dto.CircleCreateRequestDTO;
-import com.ajoledger.backend.circle.exception.CircleJoinNotAllowedException;
+import com.ajoledger.backend.circle.exception.CircleActionNotAllowedException;
+import com.ajoledger.backend.circle.exception.CircleCreatorRequiredException;
 import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
 import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
+import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
@@ -46,13 +50,15 @@ class CircleServiceIntegrationTest {
     @Autowired
     private CirclePayoutRepository circlePayoutRepository;
     @Autowired
-    private CircleSizingPolicy circleSizingPolicy;
+    private Map<String, CircleSizingPolicy> sizingPoliciesByType;
     @Autowired
     private UserRepository userRepository;
     @Autowired
     private AccountService accountService;
     @Autowired
     private FundingService fundingService;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private User createUser(String email) {
         User user = User.builder()
@@ -78,10 +84,22 @@ class CircleServiceIntegrationTest {
         CircleCreateRequestDTO dto = new CircleCreateRequestDTO();
         dto.setName("Test Circle");
         dto.setDescription("A circle for testing");
+        dto.setSizingPolicyType(CircleSizingPolicyType.FIXED_SIZE);
         dto.setMaxMembers(maxMembers);
         dto.setTerm(4);
         dto.setContributionAmount(new BigDecimal("100.00"));
         dto.setGated(gated);
+        return dto;
+    }
+
+    /** enrollmentDeadline bypasses the DTO's own lead-time validation here since that's only
+     * enforced at the @Valid HTTP layer, not when calling CircleService directly - lets tests
+     * freely set an already-past or near-future deadline as each scenario needs. */
+    private CircleCreateRequestDTO openEnrollmentRequest(int maxMembers, Integer minMembers, LocalDateTime enrollmentDeadline) {
+        CircleCreateRequestDTO dto = createRequest(maxMembers, false);
+        dto.setSizingPolicyType(CircleSizingPolicyType.OPEN_ENROLLMENT);
+        dto.setMinMembers(minMembers);
+        dto.setEnrollmentDeadline(enrollmentDeadline);
         return dto;
     }
 
@@ -112,7 +130,7 @@ class CircleServiceIntegrationTest {
         Circle circle = circleService.createCircle(creator.getId(), createRequest(2, true));
 
         assertThatThrownBy(() -> circleService.joinCircle(outsider.getId(), circle.getId()))
-                .isInstanceOf(CircleJoinNotAllowedException.class);
+                .isInstanceOf(CircleActionNotAllowedException.class);
     }
 
     @Test
@@ -199,13 +217,24 @@ class CircleServiceIntegrationTest {
 
     @Test
     void gatedCircleDiscountsPotentialGroupLoss() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        Circle openCircle = circleService.createCircle(creator.getId(), createRequest(4, false));
-        Circle gatedCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
-                createRequest(4, true));
+        User openCreator = createFundedUser(new BigDecimal("100.00"));
+        User openMember2 = createFundedUser(new BigDecimal("100.00"));
+        Circle openCircle = circleService.createCircle(openCreator.getId(), createRequest(2, false));
+        circleService.joinCircle(openMember2.getId(), openCircle.getId());
 
-        BigDecimal openLoss = circleSizingPolicy.calculatePotentialGroupLoss(openCircle, creator, 1);
-        BigDecimal gatedLoss = circleSizingPolicy.calculatePotentialGroupLoss(gatedCircle, creator, 1);
+        User gatedCreator = createFundedUser(new BigDecimal("100.00"));
+        User gatedMember2 = createFundedUser(new BigDecimal("100.00"));
+        Circle gatedCircle = circleService.createCircle(gatedCreator.getId(), createRequest(2, true));
+        CircleInvite invite = circleService.inviteToCircle(gatedCircle.getId(), gatedCreator.getId(), gatedMember2.getUsername(), null);
+        circleService.redeemInvite(invite.getCode(), gatedMember2.getId());
+        circleService.joinCircle(gatedMember2.getId(), gatedCircle.getId());
+
+        Circle reloadedOpen = circleRepository.findById(openCircle.getId()).orElseThrow();
+        Circle reloadedGated = circleRepository.findById(gatedCircle.getId()).orElseThrow();
+
+        CircleSizingPolicy fixedSizePolicy = sizingPoliciesByType.get("FIXED_SIZE");
+        BigDecimal openLoss = fixedSizePolicy.calculatePotentialGroupLoss(reloadedOpen, openCreator, 1);
+        BigDecimal gatedLoss = fixedSizePolicy.calculatePotentialGroupLoss(reloadedGated, gatedCreator, 1);
 
         assertThat(gatedLoss).isLessThan(openLoss);
     }
@@ -237,5 +266,122 @@ class CircleServiceIntegrationTest {
         Circle circle = circleRepository.findById(circleId).orElseThrow();
         circle.setLastRoundAt(LocalDateTime.now().minusWeeks(circle.getTerm() + 1L));
         circleRepository.save(circle);
+    }
+
+    @Test
+    void openEnrollmentCircleActivatesEarlyWhenCapHit() {
+        User creator = createFundedUser(new BigDecimal("100.00"));
+        User member2 = createFundedUser(new BigDecimal("100.00"));
+
+        Circle circle = circleService.createCircle(creator.getId(),
+                openEnrollmentRequest(2, null, LocalDateTime.now().plusDays(30)));
+        circleService.joinCircle(member2.getId(), circle.getId());
+
+        Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(CircleStatus.ACTIVE);
+        assertThat(reloaded.getLockedMemberCount()).isEqualTo(2);
+    }
+
+    @Test
+    void findCirclesWithClosedEnrollmentReturnsOnlyPastDeadlineFormingCircles() {
+        Circle pastDeadlineCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
+                openEnrollmentRequest(5, null, LocalDateTime.now().plusDays(30)));
+        pushPastEnrollmentDeadline(pastDeadlineCircle.getId());
+
+        Circle futureDeadlineCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
+                openEnrollmentRequest(5, null, LocalDateTime.now().plusDays(30)));
+
+        Circle fixedSizeCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
+                createRequest(2, false));
+
+        List<UUID> closed = circleService.findCirclesWithClosedEnrollment();
+
+        assertThat(closed).contains(pastDeadlineCircle.getId());
+        assertThat(closed).doesNotContain(futureDeadlineCircle.getId(), fixedSizeCircle.getId());
+    }
+
+    @Test
+    void closeEnrollmentActivatesWhenMinimumMet() {
+        User creator = createFundedUser(new BigDecimal("100.00"));
+        User member2 = createFundedUser(new BigDecimal("100.00"));
+
+        Circle circle = circleService.createCircle(creator.getId(),
+                openEnrollmentRequest(5, 2, LocalDateTime.now().plusDays(30)));
+        circleService.joinCircle(member2.getId(), circle.getId());
+        pushPastEnrollmentDeadline(circle.getId());
+
+        circleService.closeEnrollment(circle.getId());
+
+        Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(CircleStatus.ACTIVE);
+        assertThat(reloaded.getLockedMemberCount()).isEqualTo(2);
+        assertThat(circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circle.getId(), creator.getId())).isTrue();
+    }
+
+    @Test
+    void closeEnrollmentDissolvesAndRefundsInFullWhenMinimumNotMet() {
+        User creator = createFundedUser(new BigDecimal("100.00"));
+
+        Circle circle = circleService.createCircle(creator.getId(),
+                openEnrollmentRequest(5, 3, LocalDateTime.now().plusDays(30))); // only the creator ends up joining
+        pushPastEnrollmentDeadline(circle.getId());
+
+        circleService.closeEnrollment(circle.getId());
+
+        Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(CircleStatus.DISSOLVED);
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.DISSOLVED))
+                .hasSize(1);
+        assertThat(accountService.getUserAccount(creator.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
+                .isEqualByComparingTo("100.00"); // refunded in full, back to their pre-join balance
+    }
+
+    @Test
+    void cancelCircleRefundsPartiallyFilledFixedSizeCircleInFull() {
+        User creator = createFundedUser(new BigDecimal("100.00"));
+        User member2 = createFundedUser(new BigDecimal("100.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false)); // room for 1 more
+        circleService.joinCircle(member2.getId(), circle.getId());
+
+        circleService.cancelCircle(circle.getId(), creator.getId());
+
+        Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(CircleStatus.DISSOLVED);
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.DISSOLVED))
+                .hasSize(2);
+        assertThat(accountService.getUserAccount(creator.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
+                .isEqualByComparingTo("100.00");
+        assertThat(accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
+                .isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    void cancelCircleRejectsNonCreator() {
+        User creator = createFundedUser(new BigDecimal("100.00"));
+        User outsider = createFundedUser(new BigDecimal("100.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+
+        assertThatThrownBy(() -> circleService.cancelCircle(circle.getId(), outsider.getId()))
+                .isInstanceOf(CircleCreatorRequiredException.class);
+    }
+
+    @Test
+    void cancelCircleRejectsAlreadyActiveCircle() {
+        User creator = createFundedUser(new BigDecimal("100.00"));
+        User member2 = createFundedUser(new BigDecimal("100.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(member2.getId(), circle.getId()); // fills it, activates
+
+        assertThatThrownBy(() -> circleService.cancelCircle(circle.getId(), creator.getId()))
+                .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    /** Pushes a circle's enrollmentDeadline into the past so CircleEnrollmentScheduler considers it
+     * due. Raw SQL, not a JPA save - enrollmentDeadline is updatable=false at the entity level
+     * (a real invariant: it's the creator's permanent declared record, like minMembers/maxMembers),
+     * so a normal save() would silently be excluded from the generated UPDATE and do nothing. */
+    private void pushPastEnrollmentDeadline(UUID circleId) {
+        jdbcTemplate.update("UPDATE circle SET enrollment_deadline = ? WHERE id = ?",
+                LocalDateTime.now().minusDays(1), circleId);
     }
 }
