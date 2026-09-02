@@ -46,7 +46,7 @@ public class CirclePayout {
     private int roundNumber;
 
     @Column(name = "transaction_id")
-    private UUID transactionId; // null until paid; not a JPA relation, Transaction isn't a JPA entity
+    private UUID transactionId; // null until paid. Not a JPA relation, Transaction isn't a JPA entity.
 
     @Column(name = "paid_at", nullable = false, updatable = false)
     private LocalDateTime paidAt;

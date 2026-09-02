@@ -17,11 +17,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-/**
- * Manually funds the calling user's own account - a stand-in for real Stripe/PayPal SDK
+/** Manually funds the calling user's own account. A stand-in for real Stripe/PayPal SDK
  * integration, which isn't wired up yet. Still goes through the real ledger write path
- * (FundingService.postDeposit), just without an actual payment processor behind it.
- */
+ * (FundingService.postDeposit), just without an actual payment processor behind it. */
 @RestController
 @RequestMapping("/api/funding")
 @RequiredArgsConstructor

@@ -11,7 +11,7 @@ public class ConsoleEmailSender implements EmailSender {
 
     @Override
     public void sendVerificationEmail(String toEmail, String verificationLink) {
-        log.warn("ConsoleEmailSender is a local-dev placeholder - not suitable for production. Swap in a real EmailSender before deploying.");
+        log.warn("ConsoleEmailSender is a local-dev placeholder. Not suitable for production. Swap in a real EmailSender before deploying.");
         log.info("Verification email for {}: {}", toEmail, verificationLink);
     }
 }

@@ -44,7 +44,7 @@ public class CircleInvite {
     @Column(nullable = false, unique = true, updatable = false, length = 64)
     private String code;
 
-    /** Null until an email invite is redeemed by whoever signs up with that email; set immediately for a username invite. */
+    /** Null until an email invite is redeemed by whoever signs up with that email. Set immediately for a username invite. */
     @ManyToOne
     @JoinColumn(name = "invited_user_id")
     private User invitedUser;
@@ -52,7 +52,7 @@ public class CircleInvite {
     @Column(name = "invited_email", length = 100)
     private String invitedEmail;
 
-    /** Null until redeemed - a code is redeemable exactly once. */
+    /** Null until redeemed. A code is redeemable exactly once. */
     @Column(name = "redeemed_at")
     private LocalDateTime redeemedAt;
 

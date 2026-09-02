@@ -4,10 +4,8 @@ import java.util.UUID;
 
 import com.ajoledger.backend.user.User;
 
-/**
- * Thrown when an already-rotated (revoked) refresh token is presented again -
- * the actual compromise signal, distinct from a plain expired/unknown token.
- */
+/** Thrown when an already-rotated (revoked) refresh token is presented again. That's the
+ * actual compromise signal, distinct from a plain expired or unknown token. */
 public class RefreshTokenReuseDetectedException extends RuntimeException {
 
     private final User user;

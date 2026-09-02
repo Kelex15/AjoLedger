@@ -47,7 +47,7 @@ public class CircleMembership {
     @Column
     private Integer position;
 
-    /** Highest round this membership has successfully contributed for; null until their first contribution. */
+    /** Highest round this membership has successfully contributed for. Null until their first contribution. */
     @Column(name = "last_contributed_round")
     private Integer lastContributedRound;
 

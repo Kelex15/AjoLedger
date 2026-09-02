@@ -100,11 +100,9 @@ public class AuthService {
         return new MessageResponseDTO("Account created. Check your email to verify your account before logging in.");
     }
 
-    /**
-     * A signup that never got verified doesn't get to permanently squat on an email -
-     * deletes it so the real owner can retry, since only they can complete verification anyway.
-     * A verified account is a real conflict and is left alone.
-     */
+    /** A signup that never got verified doesn't get to permanently squat on an email.
+     * It's deleted so the real owner can retry. A verified account is a real conflict
+     * and is left alone. */
     private void reclaimStaleUnverifiedAccount(String email) {
         userRepository.findByEmail(email).ifPresent(existingUser -> {
             UserAuth existingAuth = userAuthRepository.findByUserId(existingUser.getId()).orElse(null);

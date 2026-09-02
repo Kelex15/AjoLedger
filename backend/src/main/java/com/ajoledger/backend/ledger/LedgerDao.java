@@ -18,14 +18,10 @@ public class LedgerDao {
 
     private final JdbcTemplate jdbcTemplate;
 
-    /**
-     * An account's locked balance, plus whether it's exempt from balance-sufficiency checks.
-     * "Unlimited" accounts are clearing accounts (CLEARING_STRIPE, CLEARING_PAYPAL, ... -
-     * matched by naming convention so a future funding source needs no code change here) -
-     * they represent the platform's external boundary and are expected to run negative, unlike
-     * every user-facing account type, which the trust/risk model is deliberately designed to
-     * never need to push negative (see design/v1.md's default waterfall).
-     */
+    /** An account's locked balance, plus whether it's exempt from balance-sufficiency checks.
+     * "Unlimited" accounts are clearing accounts, matched by naming convention (CLEARING_%) so a
+     * future funding source needs no code change here. They're the platform's external boundary
+     * and are expected to run negative, unlike every user-facing account type. */
     public record AccountBalance(BigDecimal balance, boolean unlimited) {
     }
 
@@ -72,10 +68,8 @@ public class LedgerDao {
         });
     }
 
-    /**
-     * The account's true balance, computed by aggregating ledger_entry directly - independent
-     * of (and useful for verifying against) the cached Account.balance column.
-     */
+    /** The account's true balance, aggregated from ledger_entry directly. Independent of, and
+     * useful for verifying against, the cached Account.balance column. */
     public BigDecimal getBalance(UUID accountId) {
         String sql = "SELECT COALESCE(SUM(credit_amount - debit_amount), 0) FROM ledger_entry WHERE account_id = ?";
         return jdbcTemplate.queryForObject(sql, BigDecimal.class, accountId);

@@ -27,10 +27,8 @@ public class IdempotencyDao {
             rs.getObject("completed_at", LocalDateTime.class)
     );
 
-    /**
-     * Attempts to claim the key for this request. Returns empty if this caller now owns it
-     * (safe to proceed); returns the existing record if someone already claimed it first.
-     */
+    /** Returns empty if this caller now owns the key, safe to proceed. Returns the existing
+     * record if someone already claimed it first. */
     public Optional<IdempotencyRecord> claim(UUID id, String idempotencyKey, String requestType, String requestHash) {
         String insertSql = """
             INSERT INTO idempotency_key (id, idempotency_key, request_type, request_hash, status, created_at)

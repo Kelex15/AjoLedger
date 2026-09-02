@@ -47,7 +47,7 @@ public abstract class Account {
     private Currency currency;
 
     @Column(name = "balance", nullable = false)
-    private BigDecimal balance; // cached; only ever written by the ledger's JdbcTemplate layer, never via save()
+    private BigDecimal balance; // cached. Only ever written by the ledger's JdbcTemplate layer, never via save().
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
