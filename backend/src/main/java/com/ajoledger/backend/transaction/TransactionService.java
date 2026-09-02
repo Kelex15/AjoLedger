@@ -39,8 +39,6 @@ public class TransactionService {
     private final IdempotencyDao idempotencyDao;
     private final UserAccountRepository userAccountRepository;
 
-    // ---- public API ----
-
     public Transaction postTransfer(UUID fromUserId, UserAccountType fromType, UUID toUserId, UserAccountType toType,
                                      BigDecimal amount, String idempotencyKey) {
         UserAccount from = userAccountRepository.requireByUserIdAndType(fromUserId, fromType);
@@ -51,8 +49,17 @@ public class TransactionService {
         return postLedgerTransaction(idempotencyKey, "TRANSFER", TransactionType.TRANSFER, amount, "Transfer", legs);
     }
 
-    // ---- shared primitive, used by this and every other domain's money-moving service ----
+    /** Empty both when the transaction doesn't exist and when it exists but the user wasn't a
+     * party to it. A non-participant shouldn't be able to tell those two cases apart. */
+    public Optional<Transaction> findTransactionForUser(UUID transactionId, UUID userId) {
+        Optional<Transaction> transaction = transactionDao.findById(transactionId);
+        if (transaction.isEmpty() || !ledgerDao.transactionInvolvesUser(transactionId, userId)) {
+            return Optional.empty();
+        }
+        return transaction;
+    }
 
+    /** Shared by every domain's money-moving service, not just this one. */
     public Transaction postLedgerTransaction(String idempotencyKey, String requestType, TransactionType type,
                                               BigDecimal amount, String description, List<Leg> legs) {
         return postLedgerTransaction(idempotencyKey, requestType, type, amount, description, legs, t -> {

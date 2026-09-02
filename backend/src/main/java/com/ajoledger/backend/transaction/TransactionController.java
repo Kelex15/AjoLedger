@@ -1,6 +1,5 @@
 package com.ajoledger.backend.transaction;
 
-import com.ajoledger.backend.ledger.LedgerDao;
 import com.ajoledger.backend.transaction.dto.TransactionResponseDTO;
 import com.ajoledger.backend.transaction.dto.TransferRequestDTO;
 
@@ -17,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -25,19 +23,14 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TransactionController {
 
-    private final TransactionDao transactionDao;
-    private final LedgerDao ledgerDao;
     private final TransactionService transactionService;
 
     @GetMapping(path = "/{id}", version = "1")
     public ResponseEntity<TransactionResponseDTO> getTransaction(@AuthenticationPrincipal UUID currentUserId,
                                                                    @PathVariable UUID id) {
-        Optional<Transaction> transaction = transactionDao.findById(id);
-        if (transaction.isEmpty() || !ledgerDao.transactionInvolvesUser(id, currentUserId)) {
-            // same 404 either way - a non-participant can't tell "doesn't exist" from "not yours"
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(TransactionResponseDTO.fromTransaction(transaction.get()));
+        return transactionService.findTransactionForUser(id, currentUserId)
+                .map(transaction -> ResponseEntity.ok(TransactionResponseDTO.fromTransaction(transaction)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping(path = "/transfer", version = "1")
