@@ -18,7 +18,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 import com.ajoledger.backend.user.User;
@@ -56,10 +56,10 @@ public class CircleMembership {
     private MembershipStatus status;
 
     @Column(name = "joined_at", nullable = false, updatable = false)
-    private LocalDateTime joinedAt;
+    private Instant joinedAt;
 
     @PrePersist
     protected void onCreate(){
-        this.joinedAt = LocalDateTime.now();
+        this.joinedAt = Instant.now();
     }
 }

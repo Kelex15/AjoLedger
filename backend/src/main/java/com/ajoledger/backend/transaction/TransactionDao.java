@@ -5,7 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
+import java.sql.Timestamp;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -20,7 +20,7 @@ public class TransactionDao {
             rs.getBigDecimal("amount"),
             rs.getString("description"),
             TransactionType.valueOf(rs.getString("transaction_type")),
-            rs.getObject("created_at", LocalDateTime.class)
+            rs.getTimestamp("created_at").toInstant()
     );
 
     public void insertTransaction(Transaction transaction) {
@@ -33,7 +33,7 @@ public class TransactionDao {
                 transaction.amount(),
                 transaction.description(),
                 transaction.transactionType().name(),
-                transaction.createdAt());
+                Timestamp.from(transaction.createdAt()));
     }
 
     public Optional<Transaction> findById(UUID id) {

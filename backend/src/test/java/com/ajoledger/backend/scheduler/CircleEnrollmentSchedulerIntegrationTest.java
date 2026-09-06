@@ -10,7 +10,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -77,16 +79,16 @@ class CircleEnrollmentSchedulerIntegrationTest {
         dto.setSizingPolicyType(CircleSizingPolicyType.OPEN_ENROLLMENT);
         dto.setMaxMembers(5);
         dto.setMinMembers(1);
-        dto.setEnrollmentDeadline(LocalDateTime.now().plusDays(30));
+        dto.setEnrollmentDeadline(Instant.now().plus(Duration.ofDays(30)));
         dto.setTerm(4);
         dto.setContributionAmount(new BigDecimal("100.00"));
         dto.setGated(false);
 
         Circle circle = circleService.createCircle(creator.getId(), dto);
-        // enrollmentDeadline is updatable=false at the entity level - a JPA save() here would
+        // enrollmentDeadline is updatable=false at the entity level. A JPA save() here would
         // silently no-op, so push it into the past via raw SQL instead.
         jdbcTemplate.update("UPDATE circle SET enrollment_deadline = ? WHERE id = ?",
-                LocalDateTime.now().minusDays(1), circle.getId());
+                Timestamp.from(Instant.now().minus(Duration.ofDays(1))), circle.getId());
         return circle;
     }
 

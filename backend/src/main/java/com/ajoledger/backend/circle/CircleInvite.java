@@ -15,7 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 import com.ajoledger.backend.user.User;
@@ -54,13 +54,13 @@ public class CircleInvite {
 
     /** Null until redeemed. A code is redeemable exactly once. */
     @Column(name = "redeemed_at")
-    private LocalDateTime redeemedAt;
+    private Instant redeemedAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @PrePersist
     protected void onCreate(){
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = Instant.now();
     }
 }

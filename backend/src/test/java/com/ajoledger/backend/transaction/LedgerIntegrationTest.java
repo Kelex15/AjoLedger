@@ -12,7 +12,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -191,14 +192,14 @@ class LedgerIntegrationTest {
         assertThatThrownBy(() -> transactionTemplate.execute(status -> {
             jdbcTemplate.update(
                     "INSERT INTO transaction (id, amount, description, transaction_type, created_at) VALUES (?, ?, ?, ?, ?)",
-                    transactionId, new BigDecimal("100.00"), "unbalanced test", "TRANSFER", LocalDateTime.now());
+                    transactionId, new BigDecimal("100.00"), "unbalanced test", "TRANSFER", Timestamp.from(Instant.now()));
             // debit 100, credit only 50 - does not net to zero
             jdbcTemplate.update(
                     "INSERT INTO ledger_entry (id, account_id, debit_amount, credit_amount, transaction_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    UUID.randomUUID(), account.getId(), new BigDecimal("100.00"), BigDecimal.ZERO, transactionId, LocalDateTime.now());
+                    UUID.randomUUID(), account.getId(), new BigDecimal("100.00"), BigDecimal.ZERO, transactionId, Timestamp.from(Instant.now()));
             jdbcTemplate.update(
                     "INSERT INTO ledger_entry (id, account_id, debit_amount, credit_amount, transaction_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    UUID.randomUUID(), account.getId(), BigDecimal.ZERO, new BigDecimal("50.00"), transactionId, LocalDateTime.now());
+                    UUID.randomUUID(), account.getId(), BigDecimal.ZERO, new BigDecimal("50.00"), transactionId, Timestamp.from(Instant.now()));
             return null;
         })).isInstanceOf(DataAccessException.class);
     }
@@ -212,13 +213,13 @@ class LedgerIntegrationTest {
         transactionTemplate.execute(status -> {
             jdbcTemplate.update(
                     "INSERT INTO transaction (id, amount, description, transaction_type, created_at) VALUES (?, ?, ?, ?, ?)",
-                    transactionId, new BigDecimal("10.00"), "append-only test", "TRANSFER", LocalDateTime.now());
+                    transactionId, new BigDecimal("10.00"), "append-only test", "TRANSFER", Timestamp.from(Instant.now()));
             jdbcTemplate.update(
                     "INSERT INTO ledger_entry (id, account_id, debit_amount, credit_amount, transaction_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    UUID.randomUUID(), account.getId(), new BigDecimal("10.00"), BigDecimal.ZERO, transactionId, LocalDateTime.now());
+                    UUID.randomUUID(), account.getId(), new BigDecimal("10.00"), BigDecimal.ZERO, transactionId, Timestamp.from(Instant.now()));
             jdbcTemplate.update(
                     "INSERT INTO ledger_entry (id, account_id, debit_amount, credit_amount, transaction_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                    UUID.randomUUID(), account.getId(), BigDecimal.ZERO, new BigDecimal("10.00"), transactionId, LocalDateTime.now());
+                    UUID.randomUUID(), account.getId(), BigDecimal.ZERO, new BigDecimal("10.00"), transactionId, Timestamp.from(Instant.now()));
             return null;
         });
 

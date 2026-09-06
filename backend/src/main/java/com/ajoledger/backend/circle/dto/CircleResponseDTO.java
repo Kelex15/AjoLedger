@@ -6,7 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -21,7 +21,7 @@ public class CircleResponseDTO {
     private int currentRound;
     private String status;
     private boolean gated;
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     public static CircleResponseDTO fromCircle(Circle circle) {
         return new CircleResponseDTO(

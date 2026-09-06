@@ -5,7 +5,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -88,7 +89,7 @@ public class AuthService {
                 .passwordHash(passwordEncoder.encode(dto.getPassword()))
                 .emailVerified(false)
                 .verificationToken(verificationToken)
-                .verificationTokenExpiresAt(LocalDateTime.now().plusHours(VERIFICATION_TOKEN_VALIDITY_HOURS))
+                .verificationTokenExpiresAt(Instant.now().plus(Duration.ofHours(VERIFICATION_TOKEN_VALIDITY_HOURS)))
                 .failedLoginAttempts(0)
                 .build());
 
@@ -127,7 +128,7 @@ public class AuthService {
                 .orElseThrow(() -> new InvalidOrExpiredTokenException("Invalid or expired verification token"));
 
         if (userAuth.getVerificationTokenExpiresAt() == null
-                || userAuth.getVerificationTokenExpiresAt().isBefore(LocalDateTime.now())) {
+                || userAuth.getVerificationTokenExpiresAt().isBefore(Instant.now())) {
             User staleUser = userAuth.getUser();
             userAuthRepository.delete(userAuth);
             userRepository.delete(staleUser);
@@ -259,15 +260,15 @@ public class AuthService {
     }
 
     private boolean isLocked(UserAuth userAuth) {
-        return userAuth.getLockedUntil() != null && userAuth.getLockedUntil().isAfter(LocalDateTime.now());
+        return userAuth.getLockedUntil() != null && userAuth.getLockedUntil().isAfter(Instant.now());
     }
 
     private void recordFailedAttempt(User user, UserAuth userAuth) {
         userAuth.setFailedLoginAttempts(userAuth.getFailedLoginAttempts() + 1);
-        userAuth.setLastFailedLoginAt(LocalDateTime.now());
+        userAuth.setLastFailedLoginAt(Instant.now());
 
         if (userAuth.getFailedLoginAttempts() >= appProperties.security().maxFailedAttempts()) {
-            userAuth.setLockedUntil(LocalDateTime.now().plusMinutes(appProperties.security().lockoutDurationMinutes()));
+            userAuth.setLockedUntil(Instant.now().plus(Duration.ofMinutes(appProperties.security().lockoutDurationMinutes())));
             userAuthRepository.save(userAuth);
             audit(user, AuditEventType.ACCOUNT_LOCKED, null);
         } else {

@@ -1,6 +1,6 @@
 package com.ajoledger.backend.transaction.idempotency;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 public record IdempotencyRecord(
@@ -11,8 +11,8 @@ public record IdempotencyRecord(
     IdempotencyStatus status,
     UUID transactionId,
     String failureReason,
-    LocalDateTime createdAt,
-    LocalDateTime completedAt
+    Instant createdAt,
+    Instant completedAt
 ) {
 
 }

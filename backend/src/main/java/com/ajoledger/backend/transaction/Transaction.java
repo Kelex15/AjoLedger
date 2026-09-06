@@ -1,7 +1,7 @@
 package com.ajoledger.backend.transaction;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 public record Transaction(
@@ -9,7 +9,7 @@ public record Transaction(
     BigDecimal amount,
     String description,
     TransactionType transactionType,
-    LocalDateTime createdAt
+    Instant createdAt
 ) {
 
 }

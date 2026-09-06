@@ -10,7 +10,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -194,7 +195,7 @@ class AuthFlowIntegrationTest {
         // simulate the lockout window having passed
         User user = userRepository.findByEmail(email).orElseThrow();
         UserAuth userAuth = userAuthRepository.findByUserId(user.getId()).orElseThrow();
-        userAuth.setLockedUntil(LocalDateTime.now().minusMinutes(1));
+        userAuth.setLockedUntil(Instant.now().minus(Duration.ofMinutes(1)));
         userAuthRepository.save(userAuth);
 
         restTestClient.post().uri("/api/auth/login")

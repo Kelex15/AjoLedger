@@ -13,7 +13,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 
 @Getter
 @Setter
@@ -38,7 +39,7 @@ public class CircleCreateRequestDTO {
     private Integer minMembers;
 
     /** Required for OPEN_ENROLLMENT, ignored for FIXED_SIZE. */
-    private LocalDateTime enrollmentDeadline;
+    private Instant enrollmentDeadline;
 
     @NotNull(message = "Term is required")
     @Positive(message = "Term must be positive")
@@ -59,6 +60,6 @@ public class CircleCreateRequestDTO {
             + Constants.Circle.MIN_ENROLLMENT_LEAD_DAYS + " day(s) in the future")
     public boolean isEnrollmentDeadlineFarEnoughOut() {
         return enrollmentDeadline == null
-                || enrollmentDeadline.isAfter(LocalDateTime.now().plusDays(Constants.Circle.MIN_ENROLLMENT_LEAD_DAYS));
+                || enrollmentDeadline.isAfter(Instant.now().plus(Duration.ofDays(Constants.Circle.MIN_ENROLLMENT_LEAD_DAYS)));
     }
 }

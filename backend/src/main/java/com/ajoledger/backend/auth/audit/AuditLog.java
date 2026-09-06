@@ -19,7 +19,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 import com.ajoledger.backend.user.User;
@@ -55,10 +55,10 @@ public class AuditLog {
     private String ipAddress;
 
     @Column(name = "occurred_at", nullable = false, updatable = false)
-    private LocalDateTime occurredAt;
+    private Instant occurredAt;
 
     @PrePersist
     protected void onCreate(){
-        this.occurredAt = LocalDateTime.now();
+        this.occurredAt = Instant.now();
     }
 }

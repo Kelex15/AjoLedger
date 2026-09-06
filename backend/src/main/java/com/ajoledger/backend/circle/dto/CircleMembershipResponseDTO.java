@@ -5,7 +5,7 @@ import com.ajoledger.backend.circle.CircleMembership;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -16,7 +16,7 @@ public class CircleMembershipResponseDTO {
     private UUID userId;
     private Integer position;
     private String status;
-    private LocalDateTime joinedAt;
+    private Instant joinedAt;
 
     public static CircleMembershipResponseDTO fromMembership(CircleMembership membership) {
         return new CircleMembershipResponseDTO(

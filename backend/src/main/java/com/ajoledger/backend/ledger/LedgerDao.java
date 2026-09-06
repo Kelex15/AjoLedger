@@ -5,7 +5,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -64,7 +65,7 @@ public class LedgerDao {
             ps.setBigDecimal(3, entry.debitAmount());
             ps.setBigDecimal(4, entry.creditAmount());
             ps.setObject(5, entry.transactionId());
-            ps.setObject(6, entry.createdAt());
+            ps.setTimestamp(6, Timestamp.from(entry.createdAt()));
         });
     }
 
@@ -92,11 +93,11 @@ public class LedgerDao {
      */
     public void adjustBalances(Map<UUID, BigDecimal> netChangesByAccountId) {
         String sql = "UPDATE account SET balance = balance + ?, updated_at = ? WHERE id = ?";
-        LocalDateTime now = LocalDateTime.now();
+        Timestamp now = Timestamp.from(Instant.now());
         List<Map.Entry<UUID, BigDecimal>> entries = List.copyOf(netChangesByAccountId.entrySet());
         jdbcTemplate.batchUpdate(sql, entries, entries.size(), (ps, entry) -> {
             ps.setBigDecimal(1, entry.getValue());
-            ps.setObject(2, now);
+            ps.setTimestamp(2, now);
             ps.setObject(3, entry.getKey());
         });
     }

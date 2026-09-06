@@ -10,7 +10,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -96,7 +98,7 @@ class CircleServiceIntegrationTest {
     /** enrollmentDeadline bypasses the DTO's own lead-time validation here since that's only
      * enforced at the @Valid HTTP layer, not when calling CircleService directly - lets tests
      * freely set an already-past or near-future deadline as each scenario needs. */
-    private CircleCreateRequestDTO openEnrollmentRequest(int maxMembers, Integer minMembers, LocalDateTime enrollmentDeadline) {
+    private CircleCreateRequestDTO openEnrollmentRequest(int maxMembers, Integer minMembers, Instant enrollmentDeadline) {
         CircleCreateRequestDTO dto = createRequest(maxMembers, false);
         dto.setSizingPolicyType(CircleSizingPolicyType.OPEN_ENROLLMENT);
         dto.setMinMembers(minMembers);
@@ -267,7 +269,7 @@ class CircleServiceIntegrationTest {
     /** Pushes a circle's lastRoundAt far enough into the past that its current round counts as overdue. */
     private void pushPastDeadline(UUID circleId) {
         Circle circle = circleRepository.findById(circleId).orElseThrow();
-        circle.setLastRoundAt(LocalDateTime.now().minusWeeks(circle.getTerm() + 1L));
+        circle.setLastRoundAt(Instant.now().minus(Duration.ofDays((circle.getTerm() + 1L) * 7)));
         circleRepository.save(circle);
     }
 
@@ -277,7 +279,7 @@ class CircleServiceIntegrationTest {
         User member2 = createFundedUser(new BigDecimal("100.00"));
 
         Circle circle = circleService.createCircle(creator.getId(),
-                openEnrollmentRequest(2, null, LocalDateTime.now().plusDays(30)));
+                openEnrollmentRequest(2, null, Instant.now().plus(Duration.ofDays(30))));
         circleService.joinCircle(member2.getId(), circle.getId());
 
         Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
@@ -288,11 +290,11 @@ class CircleServiceIntegrationTest {
     @Test
     void findCirclesWithClosedEnrollmentReturnsOnlyPastDeadlineFormingCircles() {
         Circle pastDeadlineCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
-                openEnrollmentRequest(5, null, LocalDateTime.now().plusDays(30)));
+                openEnrollmentRequest(5, null, Instant.now().plus(Duration.ofDays(30))));
         pushPastEnrollmentDeadline(pastDeadlineCircle.getId());
 
         Circle futureDeadlineCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
-                openEnrollmentRequest(5, null, LocalDateTime.now().plusDays(30)));
+                openEnrollmentRequest(5, null, Instant.now().plus(Duration.ofDays(30))));
 
         Circle fixedSizeCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
                 createRequest(2, false));
@@ -309,7 +311,7 @@ class CircleServiceIntegrationTest {
         User member2 = createFundedUser(new BigDecimal("100.00"));
 
         Circle circle = circleService.createCircle(creator.getId(),
-                openEnrollmentRequest(5, 2, LocalDateTime.now().plusDays(30)));
+                openEnrollmentRequest(5, 2, Instant.now().plus(Duration.ofDays(30))));
         circleService.joinCircle(member2.getId(), circle.getId());
         pushPastEnrollmentDeadline(circle.getId());
 
@@ -326,7 +328,7 @@ class CircleServiceIntegrationTest {
         User creator = createFundedUser(new BigDecimal("100.00"));
 
         Circle circle = circleService.createCircle(creator.getId(),
-                openEnrollmentRequest(5, 3, LocalDateTime.now().plusDays(30))); // only the creator ends up joining
+                openEnrollmentRequest(5, 3, Instant.now().plus(Duration.ofDays(30)))); // only the creator ends up joining
         pushPastEnrollmentDeadline(circle.getId());
 
         circleService.closeEnrollment(circle.getId());
@@ -427,6 +429,6 @@ class CircleServiceIntegrationTest {
      * updatable=false and a normal save() would silently skip it. */
     private void pushPastEnrollmentDeadline(UUID circleId) {
         jdbcTemplate.update("UPDATE circle SET enrollment_deadline = ? WHERE id = ?",
-                LocalDateTime.now().minusDays(1), circleId);
+                Timestamp.from(Instant.now().minus(Duration.ofDays(1))), circleId);
     }
 }

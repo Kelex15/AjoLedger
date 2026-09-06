@@ -7,7 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
@@ -49,14 +49,14 @@ public class RefreshTokenService {
             throw new RefreshTokenReuseDetectedException(existing.getUser(), existing.getFamilyId());
         }
 
-        if (existing.getExpiresAt().isBefore(LocalDateTime.now())) {
+        if (existing.getExpiresAt().isBefore(Instant.now())) {
             throw new InvalidOrExpiredTokenException("Refresh token expired");
         }
 
         IssuedToken newToken = issueForFamily(existing.getUser(), existing.getFamilyId());
 
         existing.setRevoked(true);
-        existing.setRevokedAt(LocalDateTime.now());
+        existing.setRevokedAt(Instant.now());
         existing.setReplacedByTokenId(newToken.id());
         refreshTokenRepository.save(existing);
 
@@ -67,14 +67,14 @@ public class RefreshTokenService {
     public void revoke(String rawToken) {
         refreshTokenRepository.findByTokenHash(hash(rawToken)).ifPresent(token -> {
             token.setRevoked(true);
-            token.setRevokedAt(LocalDateTime.now());
+            token.setRevokedAt(Instant.now());
             refreshTokenRepository.save(token);
         });
     }
 
     private void revokeFamily(UUID familyId) {
         List<RefreshToken> active = refreshTokenRepository.findByFamilyIdAndRevokedFalse(familyId);
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
         for (RefreshToken token : active) {
             token.setRevoked(true);
             token.setRevokedAt(now);
@@ -87,7 +87,7 @@ public class RefreshTokenService {
 
     private IssuedToken issueForFamily(User user, UUID familyId) {
         String rawToken = generateOpaqueToken();
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
 
         RefreshToken entity = RefreshToken.builder()
                 .user(user)

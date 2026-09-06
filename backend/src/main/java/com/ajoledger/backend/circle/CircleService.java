@@ -35,7 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -153,7 +154,7 @@ public class CircleService {
             invite.setInvitedUser(redeemer);
         }
 
-        invite.setRedeemedAt(LocalDateTime.now());
+        invite.setRedeemedAt(Instant.now());
         circleInviteRepository.save(invite);
         return invite.getCircle();
     }
@@ -370,7 +371,7 @@ public class CircleService {
     /** FIXED_SIZE circles never have an enrollmentDeadline, so they're naturally excluded here. */
     @SuppressWarnings("null")
     public List<UUID> findCirclesWithClosedEnrollment() {
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
         return circleRepository.findByStatusAndEnrollmentDeadlineIsNotNull(CircleStatus.FORMING).stream()
                 .filter(circle -> !circle.getEnrollmentDeadline().isAfter(now))
                 .map(Circle::getId)
@@ -395,9 +396,9 @@ public class CircleService {
     /** The scheduler is blind to how "due" is decided. It just gets ids to process. */
     @SuppressWarnings("null")
     public List<UUID> findCirclesWithRoundsDueToday() {
-        LocalDateTime now = LocalDateTime.now();
+        Instant now = Instant.now();
         return circleRepository.findByStatusAndLastRoundAtIsNotNull(CircleStatus.ACTIVE).stream()
-                .filter(circle -> !circle.getLastRoundAt().plusWeeks(circle.getTerm()).isAfter(now))
+                .filter(circle -> !circle.getLastRoundAt().plus(Duration.ofDays(circle.getTerm() * 7L)).isAfter(now))
                 .map(Circle::getId)
                 .toList();
     }
@@ -489,7 +490,7 @@ public class CircleService {
                 circleId + ":" + recipientMembership.getId() + ":payout-round-" + circle.getCurrentRound());
 
         circle.setCurrentRound(circle.getCurrentRound() + 1);
-        circle.setLastRoundAt(LocalDateTime.now());
+        circle.setLastRoundAt(Instant.now());
         circleRepository.save(circle);
     }
 

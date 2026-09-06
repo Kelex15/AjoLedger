@@ -22,7 +22,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -64,7 +64,7 @@ public class Circle {
 
     /** OPEN_ENROLLMENT only: when enrollment closes, checked by CircleEnrollmentScheduler. */
     @Column(name = "enrollment_deadline", updatable = false)
-    private LocalDateTime enrollmentDeadline;
+    private Instant enrollmentDeadline;
 
     /** Null while FORMING. Set once when enrollment closes, unlike maxMembers/minMembers, which
      * stay the creator's original declared bounds. Don't mark this updatable = false. Its value
@@ -88,7 +88,7 @@ public class Circle {
 
     /** When the last round completed. Anchors the next round's due date (lastRoundAt + term). */
     @Column(name = "last_round_at")
-    private LocalDateTime lastRoundAt;
+    private Instant lastRoundAt;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -107,19 +107,19 @@ public class Circle {
     private List<CircleMembership> memberships;
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @PrePersist
     protected void onCreate(){
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+        this.createdAt = Instant.now();
+        this.updatedAt = Instant.now();
     }
 
     @PreUpdate
     protected void onUpdate(){
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = Instant.now();
     }
 }

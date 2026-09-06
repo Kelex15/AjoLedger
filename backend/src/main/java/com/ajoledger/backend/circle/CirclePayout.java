@@ -16,7 +16,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 import com.ajoledger.backend.user.User;
@@ -49,10 +49,10 @@ public class CirclePayout {
     private UUID transactionId; // null until paid. Not a JPA relation, Transaction isn't a JPA entity.
 
     @Column(name = "paid_at", nullable = false, updatable = false)
-    private LocalDateTime paidAt;
+    private Instant paidAt;
 
     @PrePersist
     protected void onCreate(){
-        this.paidAt = LocalDateTime.now();
+        this.paidAt = Instant.now();
     }
 }

@@ -16,7 +16,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 import com.ajoledger.backend.user.User;
@@ -51,31 +51,31 @@ public class UserAuth {
     private String verificationToken;
 
     @Column(name = "verification_token_expires_at")
-    private LocalDateTime verificationTokenExpiresAt;
+    private Instant verificationTokenExpiresAt;
 
     @Column(name = "failed_login_attempts", nullable = false)
     private int failedLoginAttempts;
 
     @Column(name = "last_failed_login_at")
-    private LocalDateTime lastFailedLoginAt;
+    private Instant lastFailedLoginAt;
 
     @Column(name = "locked_until")
-    private LocalDateTime lockedUntil;
+    private Instant lockedUntil;
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    private Instant updatedAt;
 
     @PrePersist
     protected void onCreate(){
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+        this.createdAt = Instant.now();
+        this.updatedAt = Instant.now();
     }
 
     @PreUpdate
     protected void onUpdate(){
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = Instant.now();
     }
 }

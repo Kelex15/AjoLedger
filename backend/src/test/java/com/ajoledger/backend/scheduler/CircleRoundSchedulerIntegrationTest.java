@@ -9,7 +9,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -83,7 +84,7 @@ class CircleRoundSchedulerIntegrationTest {
         circleService.joinCircle(member2.getId(), circle.getId());
 
         Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
-        reloaded.setLastRoundAt(LocalDateTime.now().minusWeeks(reloaded.getTerm() + 1L));
+        reloaded.setLastRoundAt(Instant.now().minus(Duration.ofDays((reloaded.getTerm() + 1L) * 7)));
         return circleRepository.save(reloaded);
     }
 

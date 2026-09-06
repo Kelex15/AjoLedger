@@ -6,7 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Getter
@@ -16,7 +16,7 @@ public class TransactionResponseDTO {
     private BigDecimal amount;
     private String description;
     private String transactionType;
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     public static TransactionResponseDTO fromTransaction(Transaction transaction) {
         return new TransactionResponseDTO(

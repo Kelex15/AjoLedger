@@ -1,7 +1,7 @@
 package com.ajoledger.backend.ledger;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 public record LedgerEntry(
@@ -10,7 +10,7 @@ public record LedgerEntry(
     BigDecimal debitAmount,
     BigDecimal creditAmount,
     UUID transactionId,
-    LocalDateTime createdAt
+    Instant createdAt
 ) {
 
 }

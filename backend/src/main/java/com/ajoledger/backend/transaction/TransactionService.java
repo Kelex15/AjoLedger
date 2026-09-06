@@ -19,7 +19,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -113,12 +113,13 @@ public class TransactionService {
                 return null;
             }
 
-            Transaction transaction = new Transaction(UUID.randomUUID(), amount, description, type, LocalDateTime.now());
+            Instant now = Instant.now();
+            Transaction transaction = new Transaction(UUID.randomUUID(), amount, description, type, now);
             transactionDao.insertTransaction(transaction);
 
             List<LedgerEntry> entries = legs.stream()
                     .map(leg -> new LedgerEntry(UUID.randomUUID(), leg.accountId(), leg.debitAmount(),
-                            leg.creditAmount(), transaction.id(), LocalDateTime.now()))
+                            leg.creditAmount(), transaction.id(), now))
                     .toList();
             ledgerDao.insertEntries(entries);
 

@@ -15,7 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 import com.ajoledger.backend.user.User;
@@ -47,16 +47,16 @@ public class RefreshToken {
     private String tokenHash;
 
     @Column(name = "issued_at", nullable = false, updatable = false)
-    private LocalDateTime issuedAt;
+    private Instant issuedAt;
 
     @Column(name = "expires_at", nullable = false, updatable = false)
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
     @Column(nullable = false)
     private boolean revoked;
 
     @Column(name = "revoked_at")
-    private LocalDateTime revokedAt;
+    private Instant revokedAt;
 
     @Column(name = "replaced_by_token_id")
     private UUID replacedByTokenId;
