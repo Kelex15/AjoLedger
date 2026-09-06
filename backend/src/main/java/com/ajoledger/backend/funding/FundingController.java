@@ -31,7 +31,7 @@ public class FundingController {
     public ResponseEntity<TransactionResponseDTO> deposit(@AuthenticationPrincipal UUID currentUserId,
                                                             @Valid @RequestBody FundDepositRequestDTO dto) {
         Transaction transaction = fundingService.postDeposit(
-                currentUserId, dto.getTargetType(), dto.getFundingType(), dto.getAmount(), dto.getIdempotencyKey());
+                currentUserId, dto.targetType(), dto.fundingType(), dto.amount(), dto.idempotencyKey());
         return ResponseEntity.status(HttpStatus.CREATED).body(TransactionResponseDTO.fromTransaction(transaction));
     }
 }

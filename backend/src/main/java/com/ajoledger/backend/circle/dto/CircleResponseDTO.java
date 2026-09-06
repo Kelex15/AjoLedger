@@ -2,26 +2,22 @@ package com.ajoledger.backend.circle.dto;
 
 import com.ajoledger.backend.circle.Circle;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-@Getter
-@AllArgsConstructor
-public class CircleResponseDTO {
-    private UUID id;
-    private String name;
-    private String description;
-    private int maxMembers;
-    private int term;
-    private BigDecimal contributionAmount;
-    private int currentRound;
-    private String status;
-    private boolean gated;
-    private Instant createdAt;
+public record CircleResponseDTO(
+    UUID id,
+    String name,
+    String description,
+    int maxMembers,
+    int term,
+    BigDecimal contributionAmount,
+    int currentRound,
+    String status,
+    boolean gated,
+    Instant createdAt
+) {
 
     public static CircleResponseDTO fromCircle(Circle circle) {
         return new CircleResponseDTO(

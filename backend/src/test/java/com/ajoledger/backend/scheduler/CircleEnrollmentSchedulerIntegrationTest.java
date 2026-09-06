@@ -69,20 +69,21 @@ class CircleEnrollmentSchedulerIntegrationTest {
     }
 
     /** minMembers = 1 so the creator alone (createCircle's automatic first join) already
-     * satisfies it - keeps this fixture to the scheduler's own mechanics, not group-forming. */
+     * satisfies it. Keeps this fixture to the scheduler's own mechanics, not group-forming. */
     private Circle createPastDeadlineOpenEnrollmentCircle() {
         User creator = createFundedUser(new BigDecimal("100.00"));
 
-        CircleCreateRequestDTO dto = new CircleCreateRequestDTO();
-        dto.setName("Test Circle");
-        dto.setDescription("A circle for testing");
-        dto.setSizingPolicyType(CircleSizingPolicyType.OPEN_ENROLLMENT);
-        dto.setMaxMembers(5);
-        dto.setMinMembers(1);
-        dto.setEnrollmentDeadline(Instant.now().plus(Duration.ofDays(30)));
-        dto.setTerm(4);
-        dto.setContributionAmount(new BigDecimal("100.00"));
-        dto.setGated(false);
+        CircleCreateRequestDTO dto = CircleCreateRequestDTO.builder()
+                .name("Test Circle")
+                .description("A circle for testing")
+                .sizingPolicyType(CircleSizingPolicyType.OPEN_ENROLLMENT)
+                .maxMembers(5)
+                .minMembers(1)
+                .enrollmentDeadline(Instant.now().plus(Duration.ofDays(30)))
+                .term(4)
+                .contributionAmount(new BigDecimal("100.00"))
+                .gated(false)
+                .build();
 
         Circle circle = circleService.createCircle(creator.getId(), dto);
         // enrollmentDeadline is updatable=false at the entity level. A JPA save() here would

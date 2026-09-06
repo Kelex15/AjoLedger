@@ -68,25 +68,25 @@ public class AuthService {
 
     @Transactional
     public MessageResponseDTO signup(SignupRequestDTO dto) {
-        String email = dto.getEmail().toLowerCase();
+        String email = dto.email().toLowerCase();
 
         reclaimStaleUnverifiedAccount(email);
 
-        if (userRepository.existsByUsername(dto.getUsername())) {
+        if (userRepository.existsByUsername(dto.username())) {
             throw new DataIntegrityViolationException("Username or email already registered");
         }
 
         User user = userRepository.save(User.builder()
-                .username(dto.getUsername())
-                .firstName(dto.getFirstName())
-                .lastName(dto.getLastName())
+                .username(dto.username())
+                .firstName(dto.firstName())
+                .lastName(dto.lastName())
                 .email(email)
                 .build());
 
         String verificationToken = UUID.randomUUID().toString();
         userAuthRepository.save(UserAuth.builder()
                 .user(user)
-                .passwordHash(passwordEncoder.encode(dto.getPassword()))
+                .passwordHash(passwordEncoder.encode(dto.password()))
                 .emailVerified(false)
                 .verificationToken(verificationToken)
                 .verificationTokenExpiresAt(Instant.now().plus(Duration.ofHours(VERIFICATION_TOKEN_VALIDITY_HOURS)))
@@ -124,7 +124,7 @@ public class AuthService {
 
     @Transactional(noRollbackFor = InvalidOrExpiredTokenException.class)
     public MessageResponseDTO verifyEmail(VerifyEmailRequestDTO dto) {
-        UserAuth userAuth = userAuthRepository.findByVerificationToken(dto.getToken())
+        UserAuth userAuth = userAuthRepository.findByVerificationToken(dto.token())
                 .orElseThrow(() -> new InvalidOrExpiredTokenException("Invalid or expired verification token"));
 
         if (userAuth.getVerificationTokenExpiresAt() == null
@@ -148,7 +148,7 @@ public class AuthService {
 
     @Transactional(noRollbackFor = {InvalidCredentialsException.class, AccountLockedException.class, EmailNotVerifiedException.class})
     public AuthResponseDTO login(LoginRequestDTO dto) {
-        String email = dto.getEmail().toLowerCase();
+        String email = dto.email().toLowerCase();
 
         Optional<User> userOpt = userRepository.findByEmail(email);
         if (userOpt.isEmpty()) {
@@ -168,7 +168,7 @@ public class AuthService {
             throw new AccountLockedException("Account is temporarily locked due to too many failed login attempts");
         }
 
-        if (!passwordEncoder.matches(dto.getPassword(), userAuth.getPasswordHash())) {
+        if (!passwordEncoder.matches(dto.password(), userAuth.getPasswordHash())) {
             recordFailedAttempt(user, userAuth);
             throw isLocked(userAuth)
                     ? new AccountLockedException("Account is temporarily locked due to too many failed login attempts")
@@ -187,7 +187,7 @@ public class AuthService {
 
     @Transactional(noRollbackFor = {InvalidCredentialsException.class, EmailNotVerifiedException.class})
     public AuthResponseDTO loginWithGoogle(GoogleLoginRequestDTO dto) {
-        GoogleTokenVerifierService.GoogleUserInfo googleUser = googleTokenVerifierService.verify(dto.getIdToken())
+        GoogleTokenVerifierService.GoogleUserInfo googleUser = googleTokenVerifierService.verify(dto.idToken())
                 .orElseThrow(() -> {
                     audit(null, AuditEventType.LOGIN_FAILURE, "invalid_google_token");
                     return new InvalidCredentialsException("Invalid Google token");
@@ -229,7 +229,7 @@ public class AuthService {
     public AuthResponseDTO refresh(RefreshRequestDTO dto) {
         RefreshTokenService.RotatedToken rotated;
         try {
-            rotated = refreshTokenService.rotate(dto.getRefreshToken());
+            rotated = refreshTokenService.rotate(dto.refreshToken());
         } catch (RefreshTokenReuseDetectedException e) {
             audit(e.getUser(), AuditEventType.REFRESH_TOKEN_REUSE_DETECTED, "family_id=" + e.getFamilyId());
             throw e;
@@ -245,7 +245,7 @@ public class AuthService {
 
     @Transactional
     public void logout(UUID currentUserId, RefreshRequestDTO dto) {
-        refreshTokenService.revoke(dto.getRefreshToken());
+        refreshTokenService.revoke(dto.refreshToken());
         userRepository.findById(currentUserId).ifPresent(user -> audit(user, AuditEventType.LOGOUT, null));
     }
 

@@ -92,8 +92,8 @@ class AuthFlowIntegrationTest {
                 .expectBody(AuthResponseDTO.class)
                 .returnResult()
                 .getResponseBody();
-        assertThat(tokens.getAccessToken()).isNotBlank();
-        assertThat(tokens.getRefreshToken()).isNotBlank();
+        assertThat(tokens.accessToken()).isNotBlank();
+        assertThat(tokens.refreshToken()).isNotBlank();
 
         User user = userRepository.findByEmail(email).orElseThrow();
 
@@ -102,27 +102,27 @@ class AuthFlowIntegrationTest {
                 .expectStatus().isForbidden();
 
         restTestClient.get().uri("/api/user/" + user.getId())
-                .header("Authorization", "Bearer " + tokens.getAccessToken())
+                .header("Authorization", "Bearer " + tokens.accessToken())
                 .exchange()
                 .expectStatus().isOk();
 
         AuthResponseDTO rotated = restTestClient.post().uri("/api/auth/refresh")
-                .body(Map.of("refreshToken", tokens.getRefreshToken()))
+                .body(Map.of("refreshToken", tokens.refreshToken()))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(AuthResponseDTO.class)
                 .returnResult()
                 .getResponseBody();
-        assertThat(rotated.getRefreshToken()).isNotEqualTo(tokens.getRefreshToken());
+        assertThat(rotated.refreshToken()).isNotEqualTo(tokens.refreshToken());
 
         restTestClient.post().uri("/api/auth/logout")
-                .header("Authorization", "Bearer " + rotated.getAccessToken())
-                .body(Map.of("refreshToken", rotated.getRefreshToken()))
+                .header("Authorization", "Bearer " + rotated.accessToken())
+                .body(Map.of("refreshToken", rotated.refreshToken()))
                 .exchange()
                 .expectStatus().isNoContent();
 
         restTestClient.post().uri("/api/auth/refresh")
-                .body(Map.of("refreshToken", rotated.getRefreshToken()))
+                .body(Map.of("refreshToken", rotated.refreshToken()))
                 .exchange()
                 .expectStatus().isUnauthorized();
     }
@@ -142,17 +142,17 @@ class AuthFlowIntegrationTest {
                 .getResponseBody();
 
         AuthResponseDTO rotated = restTestClient.post().uri("/api/auth/refresh")
-                .body(Map.of("refreshToken", originalTokens.getRefreshToken()))
+                .body(Map.of("refreshToken", originalTokens.refreshToken()))
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(AuthResponseDTO.class)
                 .returnResult()
                 .getResponseBody();
-        String activeToken = rotated.getRefreshToken();
+        String activeToken = rotated.refreshToken();
 
         // reusing the already-rotated (revoked) original token triggers reuse detection
         restTestClient.post().uri("/api/auth/refresh")
-                .body(Map.of("refreshToken", originalTokens.getRefreshToken()))
+                .body(Map.of("refreshToken", originalTokens.refreshToken()))
                 .exchange()
                 .expectStatus().isUnauthorized();
 

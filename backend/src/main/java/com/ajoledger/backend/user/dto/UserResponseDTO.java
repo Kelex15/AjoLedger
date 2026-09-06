@@ -4,18 +4,7 @@ import java.util.UUID;
 
 import com.ajoledger.backend.user.User;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-
-@Getter
-@AllArgsConstructor
-public class UserResponseDTO {
-
-    private UUID id;
-    private String username;
-    private String firstName;
-    private String lastName;
-    private String email;
+public record UserResponseDTO(UUID id, String username, String firstName, String lastName, String email) {
 
     public static UserResponseDTO fromUser(User user) {
         return new UserResponseDTO(

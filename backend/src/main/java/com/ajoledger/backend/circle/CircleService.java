@@ -80,18 +80,18 @@ public class CircleService {
                 .orElseThrow(() -> new UserNotFoundException("User not found: " + creatorUserId));
 
         Circle circle = circleRepository.save(Circle.builder()
-                .name(dto.getName())
-                .description(dto.getDescription())
-                .maxMembers(dto.getMaxMembers())
-                .minMembers(dto.getMinMembers())
-                .enrollmentDeadline(dto.getEnrollmentDeadline())
-                .term(dto.getTerm())
+                .name(dto.name())
+                .description(dto.description())
+                .maxMembers(dto.maxMembers())
+                .minMembers(dto.minMembers())
+                .enrollmentDeadline(dto.enrollmentDeadline())
+                .term(dto.term())
                 .createdBy(creator)
-                .contributionAmount(dto.getContributionAmount())
+                .contributionAmount(dto.contributionAmount())
                 .currentRound(1)
                 .status(CircleStatus.FORMING)
-                .sizingPolicyType(dto.getSizingPolicyType())
-                .gated(dto.isGated())
+                .sizingPolicyType(dto.sizingPolicyType())
+                .gated(dto.gated())
                 .build());
 
         accountService.createCircleAccount(circle, CircleAccountType.POT);

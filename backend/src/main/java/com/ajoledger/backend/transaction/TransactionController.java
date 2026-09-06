@@ -37,8 +37,8 @@ public class TransactionController {
     public ResponseEntity<TransactionResponseDTO> transfer(@AuthenticationPrincipal UUID currentUserId,
                                                              @Valid @RequestBody TransferRequestDTO dto) {
         Transaction transaction = transactionService.postTransfer(
-                currentUserId, dto.getFromType(), dto.getToUserId(), dto.getToType(),
-                dto.getAmount(), dto.getIdempotencyKey());
+                currentUserId, dto.fromType(), dto.toUserId(), dto.toType(),
+                dto.amount(), dto.idempotencyKey());
         return ResponseEntity.status(HttpStatus.CREATED).body(TransactionResponseDTO.fromTransaction(transaction));
     }
 }

@@ -71,14 +71,15 @@ class CircleRoundSchedulerIntegrationTest {
         User creator = createFundedUser(new BigDecimal("100.00"));
         User member2 = createFundedUser(new BigDecimal("100.00"));
 
-        CircleCreateRequestDTO dto = new CircleCreateRequestDTO();
-        dto.setName("Test Circle");
-        dto.setDescription("A circle for testing");
-        dto.setSizingPolicyType(CircleSizingPolicyType.FIXED_SIZE);
-        dto.setMaxMembers(2);
-        dto.setTerm(4);
-        dto.setContributionAmount(new BigDecimal("100.00"));
-        dto.setGated(false);
+        CircleCreateRequestDTO dto = CircleCreateRequestDTO.builder()
+                .name("Test Circle")
+                .description("A circle for testing")
+                .sizingPolicyType(CircleSizingPolicyType.FIXED_SIZE)
+                .maxMembers(2)
+                .term(4)
+                .contributionAmount(new BigDecimal("100.00"))
+                .gated(false)
+                .build();
 
         Circle circle = circleService.createCircle(creator.getId(), dto);
         circleService.joinCircle(member2.getId(), circle.getId());

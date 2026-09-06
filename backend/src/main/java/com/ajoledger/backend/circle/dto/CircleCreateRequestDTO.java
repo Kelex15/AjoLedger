@@ -8,48 +8,37 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.Builder;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 
-@Getter
-@Setter
-@NoArgsConstructor
-public class CircleCreateRequestDTO {
+@Builder(toBuilder = true)
+public record CircleCreateRequestDTO(
+    @NotBlank(message = "Name is required") String name,
 
-    @NotBlank(message = "Name is required")
-    private String name;
+    @NotBlank(message = "Description is required") String description,
 
-    @NotBlank(message = "Description is required")
-    private String description;
-
-    @NotNull(message = "Sizing policy type is required")
-    private CircleSizingPolicyType sizingPolicyType;
+    @NotNull(message = "Sizing policy type is required") CircleSizingPolicyType sizingPolicyType,
 
     @NotNull(message = "Max members is required")
-    @Positive(message = "Max members must be positive")
-    private Integer maxMembers;
+    @Positive(message = "Max members must be positive") Integer maxMembers,
 
     /** OPEN_ENROLLMENT only. The creator's own floor. Leave unset to use the platform default. */
-    @Positive(message = "Min members must be positive")
-    private Integer minMembers;
+    @Positive(message = "Min members must be positive") Integer minMembers,
 
     /** Required for OPEN_ENROLLMENT, ignored for FIXED_SIZE. */
-    private Instant enrollmentDeadline;
+    Instant enrollmentDeadline,
 
     @NotNull(message = "Term is required")
-    @Positive(message = "Term must be positive")
-    private Integer term;
+    @Positive(message = "Term must be positive") Integer term,
 
     @NotNull(message = "Contribution amount is required")
-    @Positive(message = "Contribution amount must be positive")
-    private BigDecimal contributionAmount;
+    @Positive(message = "Contribution amount must be positive") BigDecimal contributionAmount,
 
-    private boolean gated;
+    boolean gated
+) {
 
     @AssertTrue(message = "Enrollment deadline is required for OPEN_ENROLLMENT circles")
     public boolean isEnrollmentDeadlinePresentWhenRequired() {

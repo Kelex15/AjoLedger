@@ -38,7 +38,7 @@ public class CircleController {
     public ResponseEntity<CircleInviteResponseDTO> invite(@AuthenticationPrincipal UUID currentUserId,
                                                             @PathVariable UUID circleId,
                                                             @Valid @RequestBody CircleInviteCreateRequestDTO dto) {
-        CircleInvite invite = circleService.inviteToCircle(circleId, currentUserId, dto.getUsername(), dto.getEmail());
+        CircleInvite invite = circleService.inviteToCircle(circleId, currentUserId, dto.username(), dto.email());
         return ResponseEntity.status(HttpStatus.CREATED).body(CircleInviteResponseDTO.fromInvite(invite));
     }
 

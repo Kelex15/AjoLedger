@@ -84,26 +84,26 @@ class CircleServiceIntegrationTest {
     }
 
     private CircleCreateRequestDTO createRequest(int maxMembers, boolean gated) {
-        CircleCreateRequestDTO dto = new CircleCreateRequestDTO();
-        dto.setName("Test Circle");
-        dto.setDescription("A circle for testing");
-        dto.setSizingPolicyType(CircleSizingPolicyType.FIXED_SIZE);
-        dto.setMaxMembers(maxMembers);
-        dto.setTerm(4);
-        dto.setContributionAmount(new BigDecimal("100.00"));
-        dto.setGated(gated);
-        return dto;
+        return CircleCreateRequestDTO.builder()
+                .name("Test Circle")
+                .description("A circle for testing")
+                .sizingPolicyType(CircleSizingPolicyType.FIXED_SIZE)
+                .maxMembers(maxMembers)
+                .term(4)
+                .contributionAmount(new BigDecimal("100.00"))
+                .gated(gated)
+                .build();
     }
 
     /** enrollmentDeadline bypasses the DTO's own lead-time validation here since that's only
-     * enforced at the @Valid HTTP layer, not when calling CircleService directly - lets tests
+     * enforced at the @Valid HTTP layer, not when calling CircleService directly. Lets tests
      * freely set an already-past or near-future deadline as each scenario needs. */
     private CircleCreateRequestDTO openEnrollmentRequest(int maxMembers, Integer minMembers, Instant enrollmentDeadline) {
-        CircleCreateRequestDTO dto = createRequest(maxMembers, false);
-        dto.setSizingPolicyType(CircleSizingPolicyType.OPEN_ENROLLMENT);
-        dto.setMinMembers(minMembers);
-        dto.setEnrollmentDeadline(enrollmentDeadline);
-        return dto;
+        return createRequest(maxMembers, false).toBuilder()
+                .sizingPolicyType(CircleSizingPolicyType.OPEN_ENROLLMENT)
+                .minMembers(minMembers)
+                .enrollmentDeadline(enrollmentDeadline)
+                .build();
     }
 
     @Test
