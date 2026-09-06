@@ -42,12 +42,13 @@ public class AccountService {
         createUserAccount(user, UserAccountType.LIEN);
     }
 
-    public CircleAccount createCircleAccount(Circle circle) {
+    public CircleAccount createCircleAccount(Circle circle, CircleAccountType type) {
         CircleAccount account = CircleAccount.builder()
                 .accountNumber(generateAccountNumber())
                 .currency(Currency.USD)
                 .balance(BigDecimal.ZERO)
                 .circle(circle)
+                .circleAccountType(type)
                 .build();
         return circleAccountRepository.save(account);
     }
@@ -59,8 +60,8 @@ public class AccountService {
         return userAccountRepository.findByUserIdAndUserAccountType(userId, type);
     }
 
-    public Optional<CircleAccount> getCircleAccount(UUID circleId) {
-        return circleAccountRepository.findByCircleId(circleId);
+    public Optional<CircleAccount> getCircleAccount(UUID circleId, CircleAccountType type) {
+        return circleAccountRepository.findByCircleIdAndCircleAccountType(circleId, type);
     }
 
     private String generateAccountNumber() {

@@ -41,3 +41,16 @@ Plain-language explanations of the genuinely complex parts of the system, so I c
 **Key files:** `backend/src/main/java/com/ajoledger/backend/transaction/TransactionService.java` (the `Leg` record and `postLedgerTransaction` helper), `LedgerDao.java`, `db/migration/V3__create_ledger_tables.sql` (the balance-check trigger).
 **You should know:** Why "leg" specifically, rather than treating debits and credits as separate standalone concepts — it's the unit a transaction is built out of, and the balancing invariant is defined in terms of legs summing to zero *within one transaction*, not in terms of any single leg being correct on its own.
 **In my own words:**
+
+## Circle reserve account and gradual default recovery
+
+**What it does (one sentence):** When a defaulting member's lien and the shared buffer recover money on the group's behalf, that recovery lands in a per-circle reserve account and gets released into the pot in even shares across the circle's remaining rounds, instead of landing as a lump sum on whichever round happens to resolve next.
+**Why it exists:** The default waterfall (design/v2.md Section 5) sizes what it seizes as a buyout of the defaulter's entire remaining contribution obligation, not just one round's shortfall — so crediting it straight to the pot would make one arbitrary future recipient better off purely by chance, instead of fairly spreading the recovered loss across everyone the default actually affected.
+**How it works, step by step:**
+1. `CircleAccount` gained a `circleAccountType` discriminator (`POT`/`RESERVE`), mirroring how `UserAccount` already distinguishes `CHECKING`/`SAVINGS`/`LIEN`/etc. Every circle gets both accounts at creation.
+2. `postDefaultWaterfall`'s two legs (`LIEN_SEIZURE`, `BUFFER_PAYOUT_TO_COVER_DEFAULT`) now credit the circle's `RESERVE` account instead of its `POT`.
+3. Each time `resolveRoundIfComplete` is about to pay out a round, it first checks the reserve's balance. If it's nonzero, it releases `reserveBalance ÷ roundsRemaining` into the pot as a `CIRCLE_RESERVE_DISBURSEMENT` transaction, where `roundsRemaining` counts the current round plus every round still ahead.
+4. Because the release is recalculated from the reserve's live balance every round rather than following a schedule fixed at default time, a second default before the first has fully released simply folds into the same ongoing release, and the circle's last round always empties the reserve exactly (dividing by 1 leaves nothing behind).
+**Key files:** `backend/src/main/java/com/ajoledger/backend/circle/CircleService.java` (`postDefaultWaterfall`, `releaseReserveShare`, `resolveRoundIfComplete`), `account/entity/CircleAccount.java`, `account/CircleAccountType.java`.
+**You should know:** Why the reserve is per-circle rather than folded into the shared platform-wide buffer — the buffer absorbs losses the lien can't cover at all, while the reserve only ever holds money that's already been recovered on one specific circle's behalf, so it has to stay scoped to that circle to be released back into that circle's own rounds.
+**In my own words:**

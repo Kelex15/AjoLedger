@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.ajoledger.backend.account.AccountService;
+import com.ajoledger.backend.account.CircleAccountType;
 import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.circle.dto.CircleCreateRequestDTO;
 import com.ajoledger.backend.circle.exception.CircleActionNotAllowedException;
@@ -120,6 +121,8 @@ class CircleServiceIntegrationTest {
                 .allMatch(m -> m.getLastContributedRound() != null && m.getLastContributedRound() == 1);
 
         assertThat(circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circle.getId(), creator.getId())).isTrue();
+        assertThat(accountService.getCircleAccount(circle.getId(), CircleAccountType.RESERVE).orElseThrow().getBalance())
+                .isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -376,10 +379,52 @@ class CircleServiceIntegrationTest {
                 .isInstanceOf(CircleActionNotAllowedException.class);
     }
 
-    /** Pushes a circle's enrollmentDeadline into the past so CircleEnrollmentScheduler considers it
-     * due. Raw SQL, not a JPA save - enrollmentDeadline is updatable=false at the entity level
-     * (a real invariant: it's the creator's permanent declared record, like minMembers/maxMembers),
-     * so a normal save() would silently be excluded from the generated UPDATE and do nothing. */
+    @Test
+    void defaultRecoveryIsSpreadAcrossFutureRoundsViaReserve() {
+        User creator = createFundedUser(new BigDecimal("500.00"));
+        User m2 = createFundedUser(new BigDecimal("500.00"));
+        User m3 = createFundedUser(new BigDecimal("500.00"));
+        User m4 = createFundedUser(new BigDecimal("500.00"));
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(4, false));
+        circleService.joinCircle(m2.getId(), circle.getId());
+        circleService.joinCircle(m3.getId(), circle.getId());
+        circleService.joinCircle(m4.getId(), circle.getId()); // activates, round 1 resolves, creator paid
+
+        // Drain the creator's SAVINGS so round 2's contribution sweep fails, forcing a default.
+        BigDecimal creatorBalance = accountService.getUserAccount(creator.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
+        fundingService.postWithdrawal(creator.getId(), UserAccountType.SAVINGS, FundingType.STRIPE,
+                creatorBalance, UUID.randomUUID().toString());
+
+        pushPastDeadline(circle.getId());
+        circleService.processRoundDeadline(circle.getId()); // round 2: creator defaults, reserve credited, m2 paid
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.DEFAULTED))
+                .extracting(m -> m.getUser().getId())
+                .containsExactly(creator.getId());
+
+        BigDecimal reserveAfterRound2 = reserveBalance(circle.getId());
+        assertThat(reserveAfterRound2).isGreaterThan(BigDecimal.ZERO);
+
+        pushPastDeadline(circle.getId());
+        circleService.processRoundDeadline(circle.getId()); // round 3: m3 paid, another share released
+
+        BigDecimal reserveAfterRound3 = reserveBalance(circle.getId());
+        assertThat(reserveAfterRound3).isLessThan(reserveAfterRound2).isGreaterThan(BigDecimal.ZERO);
+
+        pushPastDeadline(circle.getId());
+        circleService.processRoundDeadline(circle.getId()); // round 4, the circle's last round: fully drains
+
+        assertThat(reserveBalance(circle.getId())).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    private BigDecimal reserveBalance(UUID circleId) {
+        return accountService.getCircleAccount(circleId, CircleAccountType.RESERVE).orElseThrow().getBalance();
+    }
+
+    /** Pushes a circle's enrollmentDeadline into the past. Raw SQL, since the field is
+     * updatable=false and a normal save() would silently skip it. */
     private void pushPastEnrollmentDeadline(UUID circleId) {
         jdbcTemplate.update("UPDATE circle SET enrollment_deadline = ? WHERE id = ?",
                 LocalDateTime.now().minusDays(1), circleId);

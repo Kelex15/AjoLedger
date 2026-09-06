@@ -5,14 +5,15 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import com.ajoledger.backend.account.CircleAccountType;
 import com.ajoledger.backend.account.entity.CircleAccount;
 import com.ajoledger.backend.account.exception.AccountNotFoundException;
 
 public interface CircleAccountRepository extends JpaRepository<CircleAccount, UUID> {
-    Optional<CircleAccount> findByCircleId(UUID circleId);
+    Optional<CircleAccount> findByCircleIdAndCircleAccountType(UUID circleId, CircleAccountType circleAccountType);
 
-    default CircleAccount requireByCircleId(UUID circleId) {
-        return findByCircleId(circleId)
-                .orElseThrow(() -> new AccountNotFoundException("No pot account for circle " + circleId));
+    default CircleAccount requireByCircleIdAndType(UUID circleId, CircleAccountType type) {
+        return findByCircleIdAndCircleAccountType(circleId, type)
+                .orElseThrow(() -> new AccountNotFoundException("No " + type + " account for circle " + circleId));
     }
 }
