@@ -2,6 +2,14 @@
 
 Concepts worth understanding deeply, not just using, as they come up while building this.
 
+## Laplace smoothing for ranking small-sample ratios
+
+**Where it shows up:** `CircleService.computeReputationScore` — the `successRate` term.
+**Why it matters here:** A raw success/failure ratio breaks down for small samples: a member with 1 success and 0 failures ranks as more reliable (1.0) than one with 20 successes and 1 withdrawal (≈0.95), even though the second member has far more evidence behind their record. Comparing proportions from wildly different sample sizes needs a correction, not a raw ratio.
+**What to actually learn (not just use):** Laplace smoothing (add-k smoothing) adds a small assumed prior count to both the success and failure sides before computing the ratio, so a thin track record gets pulled toward a neutral baseline instead of swinging on one data point, while a large sample's real rate dominates once it's built up enough evidence. It's the simpler cousin of more rigorous tools for the same problem, like a Wilson score interval (the method behind e.g. Reddit's comment ranking) — Laplace smoothing trades some statistical rigor for a one-line formula that's easy to explain.
+**Where to start:** "Additive smoothing" on Wikipedia covers the general technique. Comparing it side-by-side with a Wilson score interval clarifies why both exist and when the more rigorous one earns its complexity.
+**You should know:** "How would you rank things by a success rate when some have way more data behind them than others?" A naive ratio lets a small sample masquerade as certainty. Smoothing (or a confidence-interval-based method) fixes that by making the ratio itself account for how much evidence backs it.
+
 ## Spring Framework 7 API Versioning
 
 **Where it shows up:** `backend/src/main/java/com/ajoledger/backend/system/WebConfig.java`, and the `version` attribute on `UserController`'s mappings.

@@ -551,6 +551,108 @@ class CircleServiceIntegrationTest {
         assertThat(membership.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
     }
 
+    private CircleMembership activeMembershipFor(UUID circleId, UUID userId) {
+        return circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE).stream()
+                .filter(m -> m.getUser().getId().equals(userId))
+                .findFirst().orElseThrow();
+    }
+
+    @Test
+    void circleCompletesWhenLastPositionIsVacatedByWithdrawal() {
+        User creator = createFundedUser(new BigDecimal("500.00"));
+        User lastPositionMember = createFundedUser(new BigDecimal("100.00")); // enough for round 1 only
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(lastPositionMember.getId(), circle.getId()); // activates, creator (position 1) paid round 1
+
+        pushPastDeadline(circle.getId());
+        // lastPositionMember (position 2, the circle's last) can't pay round 2 and withdraws,
+        // leaving nobody to shift into the vacated position.
+        circleService.processRoundDeadline(circle.getId());
+
+        Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(CircleStatus.COMPLETED);
+        assertThat(reloaded.getLockedMemberCount()).isEqualTo(1);
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.COMPLETED))
+                .extracting(m -> m.getUser().getId())
+                .containsExactly(creator.getId());
+    }
+
+    @Test
+    void higherLienBalanceGetsEarlierPosition() {
+        User richInLien = createFundedUser(new BigDecimal("500.00"));
+        fundingService.postDeposit(richInLien.getId(), UserAccountType.LIEN, FundingType.STRIPE,
+                new BigDecimal("200.00"), UUID.randomUUID().toString());
+        User poorInLien = createFundedUser(new BigDecimal("500.00")); // LIEN stays at 0
+
+        Circle circle = circleService.createCircle(poorInLien.getId(), createRequest(2, false));
+        circleService.joinCircle(richInLien.getId(), circle.getId()); // joins second, activates
+
+        // Despite joining second, richInLien's LIEN coverage outranks poorInLien's join-order edge.
+        assertThat(activeMembershipFor(circle.getId(), richInLien.getId()).getPosition()).isEqualTo(1);
+        assertThat(activeMembershipFor(circle.getId(), poorInLien.getId()).getPosition()).isEqualTo(2);
+    }
+
+    @Test
+    void equalReputationBreaksTiesByJoinOrder() {
+        User first = createFundedUser(new BigDecimal("500.00"));
+        User second = createFundedUser(new BigDecimal("500.00"));
+
+        Circle circle = circleService.createCircle(first.getId(), createRequest(2, false));
+        circleService.joinCircle(second.getId(), circle.getId());
+
+        assertThat(activeMembershipFor(circle.getId(), first.getId()).getPosition()).isEqualTo(1);
+        assertThat(activeMembershipFor(circle.getId(), second.getId()).getPosition()).isEqualTo(2);
+    }
+
+    @Test
+    void defaultPenalizedMoreThanWithdrawalInReputationScore() {
+        // defaultingUser: paid out first in a past circle, then fails to pay again. Their LIEN
+        // (credited from that payout) gets fully seized by the waterfall, ending at zero.
+        User defaultingUser = createFundedUser(new BigDecimal("500.00"));
+        User pastCoMember1 = createFundedUser(new BigDecimal("500.00"));
+        Circle pastCircleA = circleService.createCircle(defaultingUser.getId(), createRequest(2, false));
+        circleService.joinCircle(pastCoMember1.getId(), pastCircleA.getId());
+
+        BigDecimal defaultingUserBalance = accountService.getUserAccount(defaultingUser.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
+        fundingService.postWithdrawal(defaultingUser.getId(), UserAccountType.SAVINGS, FundingType.STRIPE,
+                defaultingUserBalance, UUID.randomUUID().toString());
+        pushPastDeadline(pastCircleA.getId());
+        circleService.processRoundDeadline(pastCircleA.getId());
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(pastCircleA.getId(), MembershipStatus.DEFAULTED))
+                .extracting(m -> m.getUser().getId())
+                .containsExactly(defaultingUser.getId());
+
+        // withdrawingUser: joins second in a past circle (never paid), then fails before their turn.
+        // Never credited any LIEN, so it stays at zero too, isolating the comparison to the penalty.
+        User pastCoMember2 = createFundedUser(new BigDecimal("500.00"));
+        User withdrawingUser = createFundedUser(new BigDecimal("100.00")); // enough for the join contribution only
+        Circle pastCircleB = circleService.createCircle(pastCoMember2.getId(), createRequest(2, false));
+        circleService.joinCircle(withdrawingUser.getId(), pastCircleB.getId());
+
+        pushPastDeadline(pastCircleB.getId());
+        circleService.processRoundDeadline(pastCircleB.getId());
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(pastCircleB.getId(), MembershipStatus.WITHDRAWN))
+                .extracting(m -> m.getUser().getId())
+                .containsExactly(withdrawingUser.getId());
+
+        // Fresh SAVINGS for both (their old accounts persist across circles) to join a new one together.
+        fundingService.postDeposit(defaultingUser.getId(), UserAccountType.SAVINGS, FundingType.STRIPE,
+                new BigDecimal("500.00"), UUID.randomUUID().toString());
+        fundingService.postDeposit(withdrawingUser.getId(), UserAccountType.SAVINGS, FundingType.STRIPE,
+                new BigDecimal("500.00"), UUID.randomUUID().toString());
+
+        Circle newCircle = circleService.createCircle(defaultingUser.getId(), createRequest(2, false));
+        circleService.joinCircle(withdrawingUser.getId(), newCircle.getId());
+
+        // Same zero success count and zero LIEN for both; only the default-vs-withdrawal penalty differs.
+        assertThat(activeMembershipFor(newCircle.getId(), withdrawingUser.getId()).getPosition()).isEqualTo(1);
+        assertThat(activeMembershipFor(newCircle.getId(), defaultingUser.getId()).getPosition()).isEqualTo(2);
+    }
+
     /** Pushes a circle's enrollmentDeadline into the past. Raw SQL, since the field is
      * updatable=false and a normal save() would silently skip it. */
     private void pushPastEnrollmentDeadline(UUID circleId) {

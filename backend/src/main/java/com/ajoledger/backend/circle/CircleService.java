@@ -42,6 +42,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -49,10 +50,14 @@ public class CircleService {
 
     private static final Logger log = LoggerFactory.getLogger(CircleService.class);
 
-    private static final BigDecimal BUFFER_FEE_RATE = new BigDecimal("0.01");
+    private static final double BUFFER_FEE_RATE = 0.01;
     // Payout split: these can be tuned, they just need to sum to <= 1.
-    private static final BigDecimal PAYOUT_LIEN_RATE = new BigDecimal("0.15");
-    private static final BigDecimal PAYOUT_BUFFER_FEE_RATE = new BigDecimal("0.02");
+    private static final double PAYOUT_LIEN_RATE = 0.15;
+    private static final double PAYOUT_BUFFER_FEE_RATE = 0.02;
+    // Reputation score weighting: placeholders, not tuned.
+    private static final double REPUTATION_LIEN_WEIGHT = 0.5;
+    private static final long DEFAULT_PENALTY_MULTIPLIER = 3;
+    private static final long REPUTATION_SMOOTHING_PRIOR = 1; // Laplace smoothing prior.
 
     private final TransactionService transactionService;
     private final UserAccountRepository userAccountRepository;
@@ -195,21 +200,50 @@ public class CircleService {
         return membership;
     }
 
-    /** Positions (payout order) are assigned here, at lock, not at join. Join order for now,
-     * a reputation-based order is planned separately. */
+    /** Positions (payout order) are assigned here, at lock, by reputation score, highest first,
+     * tiebroken by join order. */
     private void activateCircle(Circle circle) {
         List<CircleMembership> members = circleMembershipRepository
                 .findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE);
-        members.sort(Comparator.comparing(CircleMembership::getJoinedAt));
+        circle.setLockedMemberCount(members.size());
+
+        // Scored once per member up front, not inside the comparator, since a sort can invoke
+        // the comparator far more than once per element.
+        @SuppressWarnings("null")
+        Map<UUID, Double> scoresByMembershipId = members.stream()
+                .collect(Collectors.toMap(CircleMembership::getId, m -> computeReputationScore(circle, m.getUser())));
+        members.sort(Comparator
+                .<CircleMembership, Double>comparing(m -> scoresByMembershipId.get(m.getId()))
+                .reversed()
+                .thenComparing(CircleMembership::getJoinedAt));
         for (int i = 0; i < members.size(); i++) {
             members.get(i).setPosition(i + 1);
             circleMembershipRepository.save(members.get(i));
         }
 
-        circle.setLockedMemberCount(members.size());
         circle.setStatus(CircleStatus.ACTIVE);
         circleRepository.save(circle);
         resolveRoundIfComplete(circle.getId());
+    }
+
+    /** Blends a lifetime behavioral track record with how much of this circle's worst-case
+     * exposure the member's own LIEN already covers. Higher score gets an earlier position. */
+    private double computeReputationScore(Circle circle, User user) {
+        long successes = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.COMPLETED);
+        long withdrawals = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.WITHDRAWN);
+        long defaults = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.DEFAULTED);
+        long penalizedFailures = withdrawals + defaults * DEFAULT_PENALTY_MULTIPLIER;
+        double smoothedSuccesses = successes + REPUTATION_SMOOTHING_PRIOR;
+        double smoothedFailures = penalizedFailures + REPUTATION_SMOOTHING_PRIOR;
+        double successRate = smoothedSuccesses / (smoothedSuccesses + smoothedFailures);
+
+        double lienBalance = userAccountRepository.requireByUserIdAndType(user.getId(), UserAccountType.LIEN)
+                .getBalance().doubleValue();
+        double worstCaseExposure = circle.getContributionAmount().doubleValue()
+                * (resolveSizingPolicy(circle).getTotalRounds(circle) - 1);
+        double lienCoverageRatio = Math.min(1.0, lienBalance / worstCaseExposure);
+
+        return REPUTATION_LIEN_WEIGHT * successRate + (1 - REPUTATION_LIEN_WEIGHT) * lienCoverageRatio;
     }
 
     private String generateInviteCode() {
@@ -221,7 +255,7 @@ public class CircleService {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
         UserAccount buffer = userAccountRepository.requireByUserIdAndType(
                 Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
-        BigDecimal fee = roundAmount(amount.multiply(BUFFER_FEE_RATE));
+        BigDecimal fee = roundAmount(amount.multiply(BigDecimal.valueOf(BUFFER_FEE_RATE)));
         BigDecimal netToPot = amount.subtract(fee);
         List<Leg> legs = List.of(
                 new Leg(savings.getId(), amount, BigDecimal.ZERO),
@@ -237,7 +271,7 @@ public class CircleService {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
         UserAccount buffer = userAccountRepository.requireByUserIdAndType(
                 Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
-        BigDecimal fee = roundAmount(amount.multiply(BUFFER_FEE_RATE));
+        BigDecimal fee = roundAmount(amount.multiply(BigDecimal.valueOf(BUFFER_FEE_RATE)));
         BigDecimal netFromPot = amount.subtract(fee);
         List<Leg> legs = List.of(
                 new Leg(circlePotAccountId, netFromPot, BigDecimal.ZERO),
@@ -254,8 +288,8 @@ public class CircleService {
         UserAccount buffer = userAccountRepository.requireByUserIdAndType(
                 Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
 
-        BigDecimal lienShare = roundAmount(grossAmount.multiply(PAYOUT_LIEN_RATE));
-        BigDecimal bufferFee = roundAmount(grossAmount.multiply(PAYOUT_BUFFER_FEE_RATE));
+        BigDecimal lienShare = roundAmount(grossAmount.multiply(BigDecimal.valueOf(PAYOUT_LIEN_RATE)));
+        BigDecimal bufferFee = roundAmount(grossAmount.multiply(BigDecimal.valueOf(PAYOUT_BUFFER_FEE_RATE)));
         BigDecimal net = grossAmount.subtract(lienShare).subtract(bufferFee);
 
         List<Leg> legs = List.of(
@@ -491,8 +525,8 @@ public class CircleService {
     private void resolveRoundIfComplete(UUID circleId) {
         Circle circle = circleRepository.findById(circleId)
                 .orElseThrow(() -> new IllegalStateException("Circle not found: " + circleId));
-        boolean everyoneCurrent = circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE)
-                .stream()
+        List<CircleMembership> activeMembers = circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE);
+        boolean everyoneCurrent = activeMembers.stream()
                 .allMatch(m -> m.getLastContributedRound() != null && m.getLastContributedRound() >= circle.getCurrentRound());
 
         if (!everyoneCurrent) {
@@ -500,35 +534,37 @@ public class CircleService {
         }
 
         CircleMembership recipientMembership = getCurrentPayoutReceiver(circle);
-        if (recipientMembership == null) {
-            return;
+        if (recipientMembership != null) {
+            User recipient = recipientMembership.getUser();
+            releaseReserveShare(circle);
+            // Fetched after the reserve release, whose JDBC-side balance update this JPA read must see.
+            CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
+            // Pay out what the pot actually holds, not calculatePotSize's theoretical figure. The
+            // pot never holds the full contributionAmount because postContribution skims a fee
+            // off each contribution before crediting it.
+            BigDecimal grossAmount = pot.getBalance();
+
+            CirclePayout payout = circlePayoutRepository.save(CirclePayout.builder()
+                    .circle(circle)
+                    .recipient(recipient)
+                    .roundNumber(circle.getCurrentRound())
+                    .build());
+
+            postPayout(pot.getId(), payout.getId(), recipient.getId(), grossAmount,
+                    circleId + ":" + recipientMembership.getId() + ":payout-round-" + circle.getCurrentRound());
+
+            circle.setCurrentRound(circle.getCurrentRound() + 1);
+            circle.setLastRoundAt(Instant.now());
+            circleRepository.save(circle);
         }
 
-        User recipient = recipientMembership.getUser();
-        releaseReserveShare(circle);
-        // Fetched after the reserve release, whose JDBC-side balance update this JPA read must see.
-        CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
-        // Pay out what the pot actually holds, not calculatePotSize's theoretical figure. The
-        // pot never holds the full contributionAmount because postContribution skims a fee
-        // off each contribution before crediting it.
-        BigDecimal grossAmount = pot.getBalance();
-
-        CirclePayout payout = circlePayoutRepository.save(CirclePayout.builder()
-                .circle(circle)
-                .recipient(recipient)
-                .roundNumber(circle.getCurrentRound())
-                .build());
-
-        postPayout(pot.getId(), payout.getId(), recipient.getId(), grossAmount,
-                circleId + ":" + recipientMembership.getId() + ":payout-round-" + circle.getCurrentRound());
-
-        circle.setCurrentRound(circle.getCurrentRound() + 1);
-        circle.setLastRoundAt(Instant.now());
-        circleRepository.save(circle);
-
-        int totalRounds = resolveSizingPolicy(circle).getTotalRounds(circle);
-        if (circle.getCurrentRound() > totalRounds) {
-            completeCircle(circle, totalRounds);
+        // Checked regardless of whether this call paid anyone: a withdrawal can vacate the
+        // circle's last remaining position with nobody left to shift into it, so a round with
+        // no recipient still needs to be recognized as "everyone left is already paid."
+        boolean everyonePaid = activeMembers.stream()
+                .allMatch(m -> circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circleId, m.getUser().getId()));
+        if (everyonePaid) {
+            completeCircle(circle, resolveSizingPolicy(circle).getTotalRounds(circle));
         }
     }
 

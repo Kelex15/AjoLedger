@@ -54,3 +54,15 @@ Plain-language explanations of the genuinely complex parts of the system, so I c
 **Key files:** `backend/src/main/java/com/ajoledger/backend/circle/CircleService.java` (`postDefaultWaterfall`, `releaseReserveShare`, `resolveRoundIfComplete`), `account/entity/CircleAccount.java`, `account/CircleAccountType.java`.
 **You should know:** Why the reserve is per-circle rather than folded into the shared platform-wide buffer — the buffer absorbs losses the lien can't cover at all, while the reserve only ever holds money that's already been recovered on one specific circle's behalf, so it has to stay scoped to that circle to be released back into that circle's own rounds.
 **In my own words:**
+
+## Reputation-based payout position assignment
+
+**What it does (one sentence):** When a circle locks, its members' payout order isn't join order — it's decided by a reputation score blending each member's lifetime track record with how much of their own `LIEN` already covers the risk of an early slot, and the highest score gets position 1.
+**Why it exists:** The collateral formula (design/v3.md Section 4) already lets a member with enough banked `LIEN` take an early slot without new cash. Deciding *who* actually gets that slot by reputation instead of who happened to click join first rewards proven reliability with something people actually want, and it naturally lines up with the collateral math, since a high-reputation member plausibly already has the `LIEN` to back it.
+**How it works, step by step:**
+1. `activateCircle` fetches every `ACTIVE` membership, sets `lockedMemberCount`, then scores each member once via `computeReputationScore` before sorting — never inside the comparator itself, since a sort can invoke it more than once per element.
+2. The score blends a Laplace-smoothed lifetime success rate (`COMPLETED` memberships vs. `WITHDRAWN`/`DEFAULTED`, with a default penalized 3× a withdrawal) with a `LIEN` coverage ratio (current balance against the circle's worst-case exposure at position 1).
+3. Members are sorted by score descending, tiebroken by `joinedAt`, and positions 1..N are assigned in that order.
+**Key files:** `backend/src/main/java/com/ajoledger/backend/circle/CircleService.java` (`activateCircle`, `computeReputationScore`), `CircleMembershipRepository.countByUser_IdAndStatus`.
+**You should know:** Why the score is computed live from `CircleMembership` rows instead of a running counter on `User` — same reasoning as balances being aggregated from the ledger rather than cached: a live count can't drift out of sync with the rows it's supposed to summarize.
+**In my own words:**

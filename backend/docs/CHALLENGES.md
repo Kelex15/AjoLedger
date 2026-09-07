@@ -2,6 +2,16 @@
 
 Real problems hit while building this, and how I solved them — the messy part in between the ADRs (decisions made before writing code) and HOW_IT_WORKS.md (how the finished mechanism works).
 
+## Comparing success rates across wildly different sample sizes
+
+**Date:** 2026-09-07
+**What I was trying to do:** Design a reputation score for circle position assignment, blending a member's completed-vs-withdrawn/defaulted circle history into a simple success rate.
+**What went wrong:** The first version of the formula was a plain ratio — successes / (successes + failures). A member with a single successful circle and zero failures (1/1 = 100%) would outrank someone with 20 successful circles and only 1 withdrawal (20/21 ≈ 95%), even though the second member has a far more substantial track record.
+**Why it happened:** A raw ratio treats every data point as equally informative regardless of how many there are. One data point and twenty-one data points aren't comparable evidence, but a plain ratio doesn't know that.
+**How I fixed it:** Applied Laplace smoothing — add an assumed prior (1 success, 1 failure) to both sides before computing the ratio. This pulls small samples toward a neutral 0.5 baseline while letting a large sample's real rate dominate once it's actually built up enough evidence.
+**What I'd do differently / what this taught me:** Any time a ranking formula compares a ratio across members with very different amounts of underlying data, check it against a lopsided-sample-size case before trusting it. A "perfect" score built on almost no evidence needs to read as less certain than a strong-but-imperfect score built on a lot of it.
+**Short version:** A plain success-rate ratio for reputation scoring would have let one lucky data point outrank a long, mostly-clean track record. Fixed by smoothing the ratio with an assumed prior so small samples don't masquerade as certainty.
+
 ## Deciding not to track payout amounts/accounts in CirclePayout
 
 **Date:** 2026-08-13
