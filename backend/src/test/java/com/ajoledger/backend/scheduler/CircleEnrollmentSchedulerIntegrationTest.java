@@ -68,17 +68,18 @@ class CircleEnrollmentSchedulerIntegrationTest {
         return user;
     }
 
-    /** minMembers = 1 so the creator alone (createCircle's automatic first join) already
-     * satisfies it. Keeps this fixture to the scheduler's own mechanics, not group-forming. */
+    /** Two members, the platform minimum, join before the deadline gets pushed into the past,
+     * so closing enrollment activates the circle without also immediately completing it. */
     private Circle createPastDeadlineOpenEnrollmentCircle() {
         User creator = createFundedUser(new BigDecimal("100.00"));
+        User member2 = createFundedUser(new BigDecimal("100.00"));
 
         CircleCreateRequestDTO dto = CircleCreateRequestDTO.builder()
                 .name("Test Circle")
                 .description("A circle for testing")
                 .sizingPolicyType(CircleSizingPolicyType.OPEN_ENROLLMENT)
                 .maxMembers(5)
-                .minMembers(1)
+                .minMembers(2)
                 .enrollmentDeadline(Instant.now().plus(Duration.ofDays(30)))
                 .term(4)
                 .contributionAmount(new BigDecimal("100.00"))
@@ -86,6 +87,7 @@ class CircleEnrollmentSchedulerIntegrationTest {
                 .build();
 
         Circle circle = circleService.createCircle(creator.getId(), dto);
+        circleService.joinCircle(member2.getId(), circle.getId());
         // enrollmentDeadline is updatable=false at the entity level. A JPA save() here would
         // silently no-op, so push it into the past via raw SQL instead.
         jdbcTemplate.update("UPDATE circle SET enrollment_deadline = ? WHERE id = ?",

@@ -66,9 +66,8 @@ public class Circle {
     @Column(name = "enrollment_deadline", updatable = false)
     private Instant enrollmentDeadline;
 
-    /** Null while FORMING. Set once when enrollment closes, unlike maxMembers/minMembers, which
-     * stay the creator's original declared bounds. Don't mark this updatable = false. Its value
-     * isn't known until well after the row is first created. */
+    /** Null while FORMING. Set at enrollment close and can shrink further on a pre-payout
+     * withdrawal, so it stays mutable, not updatable = false. */
     @Column(name = "locked_member_count")
     private Integer lockedMemberCount;
 

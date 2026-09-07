@@ -4,6 +4,7 @@ import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.system.Constants;
 
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -23,10 +24,12 @@ public record CircleCreateRequestDTO(
     @NotNull(message = "Sizing policy type is required") CircleSizingPolicyType sizingPolicyType,
 
     @NotNull(message = "Max members is required")
-    @Positive(message = "Max members must be positive") Integer maxMembers,
+    @Min(value = Constants.Circle.DEFAULT_MIN_MEMBERS, message = "Max members must be at least "
+            + Constants.Circle.DEFAULT_MIN_MEMBERS) Integer maxMembers,
 
     /** OPEN_ENROLLMENT only. The creator's own floor. Leave unset to use the platform default. */
-    @Positive(message = "Min members must be positive") Integer minMembers,
+    @Min(value = Constants.Circle.DEFAULT_MIN_MEMBERS, message = "Min members must be at least "
+            + Constants.Circle.DEFAULT_MIN_MEMBERS) Integer minMembers,
 
     /** Required for OPEN_ENROLLMENT, ignored for FIXED_SIZE. */
     Instant enrollmentDeadline,

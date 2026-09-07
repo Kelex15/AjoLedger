@@ -425,6 +425,132 @@ class CircleServiceIntegrationTest {
         return accountService.getCircleAccount(circleId, CircleAccountType.RESERVE).orElseThrow().getBalance();
     }
 
+    @Test
+    void positionCompactionAfterSingleWithdrawalResolvesCircleToCompletion() {
+        User creator = createFundedUser(new BigDecimal("500.00"));
+        User m2 = createFundedUser(new BigDecimal("100.00")); // enough for round 1 only
+        User m3 = createFundedUser(new BigDecimal("500.00"));
+        User m4 = createFundedUser(new BigDecimal("500.00"));
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(4, false));
+        circleService.joinCircle(m2.getId(), circle.getId());
+        circleService.joinCircle(m3.getId(), circle.getId());
+        circleService.joinCircle(m4.getId(), circle.getId()); // activates, round 1 resolves
+
+        pushPastDeadline(circle.getId());
+        circleService.processRoundDeadline(circle.getId()); // m2 can't pay round 2, withdraws, positions compact
+
+        Circle afterWithdrawal = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(afterWithdrawal.getLockedMemberCount()).isEqualTo(3);
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.WITHDRAWN))
+                .extracting(m -> m.getUser().getId())
+                .containsExactly(m2.getId());
+
+        // Gapless 1..3, regardless of which rule ends up deciding who holds which slot.
+        List<Integer> remainingPositions = circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE)
+                .stream().map(CircleMembership::getPosition).sorted().toList();
+        assertThat(remainingPositions).containsExactly(1, 2, 3);
+
+        pushPastDeadline(circle.getId());
+        circleService.processRoundDeadline(circle.getId()); // the circle's now-final round: completes
+
+        Circle finalCircle = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(finalCircle.getStatus()).isEqualTo(CircleStatus.COMPLETED);
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.COMPLETED))
+                .extracting(m -> m.getUser().getId())
+                .containsExactlyInAnyOrder(creator.getId(), m3.getId(), m4.getId());
+    }
+
+    @Test
+    void simultaneousWithdrawalsInSameRoundCompactPositionsCorrectly() {
+        User creator = createFundedUser(new BigDecimal("500.00"));
+        User m2 = createFundedUser(new BigDecimal("100.00")); // enough for round 1 only
+        User m3 = createFundedUser(new BigDecimal("100.00")); // enough for round 1 only
+        User m4 = createFundedUser(new BigDecimal("500.00"));
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(4, false));
+        circleService.joinCircle(m2.getId(), circle.getId());
+        circleService.joinCircle(m3.getId(), circle.getId());
+        circleService.joinCircle(m4.getId(), circle.getId()); // activates, round 1 resolves
+
+        pushPastDeadline(circle.getId());
+        circleService.processRoundDeadline(circle.getId()); // round 2: both m2 and m3 can't pay, both withdraw
+
+        Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(reloaded.getLockedMemberCount()).isEqualTo(2);
+        assertThat(reloaded.getStatus()).isEqualTo(CircleStatus.COMPLETED); // only creator and m4 remain, both resolved
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.WITHDRAWN))
+                .extracting(m -> m.getUser().getId())
+                .containsExactlyInAnyOrder(m2.getId(), m3.getId());
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.COMPLETED))
+                .extracting(m -> m.getUser().getId())
+                .containsExactlyInAnyOrder(creator.getId(), m4.getId());
+        assertThat(circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circle.getId(), m4.getId())).isTrue();
+    }
+
+    @Test
+    void completedCircleIgnoresFurtherProcessing() {
+        User creator = createFundedUser(new BigDecimal("500.00"));
+        User member2 = createFundedUser(new BigDecimal("500.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(member2.getId(), circle.getId()); // activates, round 1 resolves
+
+        pushPastDeadline(circle.getId());
+        circleService.processRoundDeadline(circle.getId()); // round 2 resolves, circle completes
+
+        Circle completed = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(completed.getStatus()).isEqualTo(CircleStatus.COMPLETED);
+
+        BigDecimal creatorBalanceBefore = accountService.getUserAccount(creator.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance();
+        BigDecimal member2BalanceBefore = accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance();
+
+        pushPastDeadline(circle.getId());
+        circleService.processRoundDeadline(circle.getId()); // must be a no-op
+
+        assertThat(accountService.getUserAccount(creator.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
+                .isEqualByComparingTo(creatorBalanceBefore);
+        assertThat(accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
+                .isEqualByComparingTo(member2BalanceBefore);
+
+        Circle stillCompleted = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(stillCompleted.getStatus()).isEqualTo(CircleStatus.COMPLETED);
+        assertThat(stillCompleted.getCurrentRound()).isEqualTo(completed.getCurrentRound());
+    }
+
+    @Test
+    void joiningSecondCircleWhileActiveInAnotherIsRejected() {
+        User user = createFundedUser(new BigDecimal("500.00"));
+        User otherCreator = createFundedUser(new BigDecimal("500.00"));
+
+        circleService.createCircle(user.getId(), createRequest(2, false)); // still FORMING, user is ACTIVE in it
+
+        Circle secondCircle = circleService.createCircle(otherCreator.getId(), createRequest(2, false));
+
+        assertThatThrownBy(() -> circleService.joinCircle(user.getId(), secondCircle.getId()))
+                .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    @Test
+    void completedMemberCanJoinNewCircle() {
+        User creator = createFundedUser(new BigDecimal("500.00"));
+        User member2 = createFundedUser(new BigDecimal("500.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(member2.getId(), circle.getId()); // activates, round 1 resolves
+
+        pushPastDeadline(circle.getId());
+        circleService.processRoundDeadline(circle.getId()); // round 2 resolves, circle completes
+
+        assertThat(circleRepository.findById(circle.getId()).orElseThrow().getStatus())
+                .isEqualTo(CircleStatus.COMPLETED);
+
+        User newCircleCreator = createFundedUser(new BigDecimal("500.00"));
+        Circle newCircle = circleService.createCircle(newCircleCreator.getId(), createRequest(2, false));
+
+        CircleMembership membership = circleService.joinCircle(creator.getId(), newCircle.getId());
+        assertThat(membership.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+    }
+
     /** Pushes a circle's enrollmentDeadline into the past. Raw SQL, since the field is
      * updatable=false and a normal save() would silently skip it. */
     private void pushPastEnrollmentDeadline(UUID circleId) {

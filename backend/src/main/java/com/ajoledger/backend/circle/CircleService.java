@@ -38,6 +38,7 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -166,15 +167,17 @@ public class CircleService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
 
+        if (circleMembershipRepository.existsByUser_IdAndStatus(userId, MembershipStatus.ACTIVE)) {
+            throw new CircleActionNotAllowedException("Already an active member of another circle");
+        }
+
         if (!resolveSizingPolicy(circle).canMemberJoin(circle, user)) {
             throw new CircleActionNotAllowedException("Not eligible to join circle: " + circleId);
         }
 
-        int position = 1 + circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE).size();
         CircleMembership membership = circleMembershipRepository.save(CircleMembership.builder()
                 .circle(circle)
                 .user(user)
-                .position(position)
                 .status(MembershipStatus.ACTIVE)
                 .build());
 
@@ -184,17 +187,26 @@ public class CircleService {
         membership.setLastContributedRound(circle.getCurrentRound());
         circleMembershipRepository.save(membership);
 
-        if (position == circle.getMaxMembers()) {
+        int activeCount = circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE).size();
+        if (activeCount == circle.getMaxMembers()) {
             activateCircle(circle);
         }
 
         return membership;
     }
 
+    /** Positions (payout order) are assigned here, at lock, not at join. Join order for now,
+     * a reputation-based order is planned separately. */
     private void activateCircle(Circle circle) {
-        int lockedCount = circleMembershipRepository
-                .findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE).size();
-        circle.setLockedMemberCount(lockedCount);
+        List<CircleMembership> members = circleMembershipRepository
+                .findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE);
+        members.sort(Comparator.comparing(CircleMembership::getJoinedAt));
+        for (int i = 0; i < members.size(); i++) {
+            members.get(i).setPosition(i + 1);
+            circleMembershipRepository.save(members.get(i));
+        }
+
+        circle.setLockedMemberCount(members.size());
         circle.setStatus(CircleStatus.ACTIVE);
         circleRepository.save(circle);
         resolveRoundIfComplete(circle.getId());
@@ -431,8 +443,13 @@ public class CircleService {
         Circle circle = circleRepository.findById(circleId)
                 .orElseThrow(() -> new IllegalStateException("Circle not found: " + circleId));
         CircleAccount reserve = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.RESERVE);
+        @SuppressWarnings("null")
+        List<UUID> unpaidMembershipIds = unpaidActiveMemberships(circle).stream().map(CircleMembership::getId).toList();
 
-        for (CircleMembership membership : unpaidActiveMemberships(circle)) {
+        for (UUID membershipId : unpaidMembershipIds) {
+            // Re-fetched since an earlier withdrawal in this same loop may have shifted this
+            // membership's position.
+            CircleMembership membership = circleMembershipRepository.findById(membershipId).orElseThrow();
             User user = membership.getUser();
             boolean alreadyPaidOut = circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circleId, user.getId());
 
@@ -449,8 +466,24 @@ public class CircleService {
                 membership.setStatus(MembershipStatus.DEFAULTED);
                 circleMembershipRepository.save(membership);
             } else {
+                int withdrawnPosition = membership.getPosition();
                 membership.setStatus(MembershipStatus.WITHDRAWN);
                 circleMembershipRepository.save(membership);
+                compactPositionsAfterWithdrawal(circle, withdrawnPosition);
+            }
+        }
+    }
+
+    /** Closes the gap a pre-payout withdrawal leaves, so a future round never stalls looking
+     * for a position nobody holds anymore. */
+    private void compactPositionsAfterWithdrawal(Circle circle, int withdrawnPosition) {
+        circle.setLockedMemberCount(circle.getLockedMemberCount() - 1);
+        circleRepository.save(circle);
+
+        for (CircleMembership other : circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE)) {
+            if (other.getPosition() > withdrawnPosition) {
+                other.setPosition(other.getPosition() - 1);
+                circleMembershipRepository.save(other);
             }
         }
     }
@@ -492,6 +525,21 @@ public class CircleService {
         circle.setCurrentRound(circle.getCurrentRound() + 1);
         circle.setLastRoundAt(Instant.now());
         circleRepository.save(circle);
+
+        int totalRounds = resolveSizingPolicy(circle).getTotalRounds(circle);
+        if (circle.getCurrentRound() > totalRounds) {
+            completeCircle(circle, totalRounds);
+        }
+    }
+
+    private void completeCircle(Circle circle, int totalRounds) {
+        circle.setStatus(CircleStatus.COMPLETED);
+        circle.setCurrentRound(totalRounds);
+        circleRepository.save(circle);
+        for (CircleMembership membership : circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE)) {
+            membership.setStatus(MembershipStatus.COMPLETED);
+            circleMembershipRepository.save(membership);
+        }
     }
 
     /** Spreads the reserve's current balance evenly across the rounds still ahead, rather than
