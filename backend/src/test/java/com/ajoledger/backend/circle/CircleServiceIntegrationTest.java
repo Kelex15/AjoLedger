@@ -30,6 +30,7 @@ import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
+import com.ajoledger.backend.transaction.exception.LienWithdrawalBlockedException;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
 
@@ -651,6 +652,88 @@ class CircleServiceIntegrationTest {
         // Same zero success count and zero LIEN for both; only the default-vs-withdrawal penalty differs.
         assertThat(activeMembershipFor(newCircle.getId(), withdrawingUser.getId()).getPosition()).isEqualTo(1);
         assertThat(activeMembershipFor(newCircle.getId(), defaultingUser.getId()).getPosition()).isEqualTo(2);
+    }
+
+    @Test
+    void sufficientLienMeansNoSkimAtPayout() {
+        User richInLien = createFundedUser(new BigDecimal("500.00"));
+        fundingService.postDeposit(richInLien.getId(), UserAccountType.LIEN, FundingType.STRIPE,
+                new BigDecimal("200.00"), UUID.randomUUID().toString());
+        User other = createFundedUser(new BigDecimal("500.00"));
+        BigDecimal lienBefore = accountService.getUserAccount(richInLien.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+
+        Circle circle = circleService.createCircle(richInLien.getId(), createRequest(2, false));
+        circleService.joinCircle(other.getId(), circle.getId()); // activates; richInLien outranks by LIEN, pays round 1
+        assertThat(activeMembershipFor(circle.getId(), richInLien.getId()).getPosition()).isEqualTo(1);
+
+        BigDecimal lienAfter = accountService.getUserAccount(richInLien.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+        assertThat(lienAfter).isEqualByComparingTo(lienBefore); // banked LIEN already covers the loss, no skim
+    }
+
+    @Test
+    void capLimitsSkimEvenWhenNeededIsLarger() {
+        User recipient = createFundedUser(new BigDecimal("500.00")); // creator, zero LIEN
+        User m2 = createFundedUser(new BigDecimal("500.00"));
+        User m3 = createFundedUser(new BigDecimal("500.00"));
+        User m4 = createFundedUser(new BigDecimal("500.00"));
+        int maxMembers = 4;
+        BigDecimal contributionAmount = new BigDecimal("100.00");
+        BigDecimal groupLossAtFirstPosition = TrustCalculations.calculateGroupLoss(contributionAmount, maxMembers, 1);
+
+        Circle circle = circleService.createCircle(recipient.getId(), createRequest(maxMembers, false));
+        circleService.joinCircle(m2.getId(), circle.getId());
+        circleService.joinCircle(m3.getId(), circle.getId());
+        circleService.joinCircle(m4.getId(), circle.getId()); // activates; all tied, creator keeps position 1 by join order
+        assertThat(activeMembershipFor(circle.getId(), recipient.getId()).getPosition()).isEqualTo(1);
+
+        BigDecimal lienAfter = accountService.getUserAccount(recipient.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+        // capped short of the full need: some skim happened, but nowhere near the full group loss
+        assertThat(lienAfter).isPositive().isLessThan(groupLossAtFirstPosition);
+    }
+
+    @Test
+    void activeLockedCircleBlocksWithdrawalBelowFloor() {
+        User creator = createFundedUser(new BigDecimal("500.00"));
+        User member2 = createFundedUser(new BigDecimal("500.00"));
+        fundingService.postDeposit(member2.getId(), UserAccountType.LIEN, FundingType.STRIPE,
+                new BigDecimal("100.00"), UUID.randomUUID().toString()); // exactly at the floor once round 1 resolves and currentRound advances to 2
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(member2.getId(), circle.getId()); // activates and locks the circle
+
+        assertThatThrownBy(() -> circleService.postLienWithdrawal(member2.getId(), new BigDecimal("1.00"),
+                UUID.randomUUID().toString()))
+                .isInstanceOf(LienWithdrawalBlockedException.class);
+    }
+
+    @Test
+    void formingCircleAllowsFullLienWithdrawalDespiteActiveMembership() {
+        User creator = createFundedUser(new BigDecimal("500.00"));
+        fundingService.postDeposit(creator.getId(), UserAccountType.LIEN, FundingType.STRIPE,
+                new BigDecimal("50.00"), UUID.randomUUID().toString());
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false)); // needs 3 members, still FORMING
+        assertThat(circle.getStatus()).isEqualTo(CircleStatus.FORMING);
+
+        circleService.postLienWithdrawal(creator.getId(), new BigDecimal("50.00"), UUID.randomUUID().toString());
+
+        assertThat(accountService.getUserAccount(creator.getId(), UserAccountType.LIEN).orElseThrow().getBalance())
+                .isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void noActiveMembershipAllowsFullLienWithdrawal() {
+        User user = createFundedUser(new BigDecimal("500.00"));
+        fundingService.postDeposit(user.getId(), UserAccountType.LIEN, FundingType.STRIPE,
+                new BigDecimal("75.00"), UUID.randomUUID().toString());
+
+        circleService.postLienWithdrawal(user.getId(), new BigDecimal("75.00"), UUID.randomUUID().toString());
+
+        assertThat(accountService.getUserAccount(user.getId(), UserAccountType.LIEN).orElseThrow().getBalance())
+                .isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     /** Pushes a circle's enrollmentDeadline into the past. Raw SQL, since the field is

@@ -52,7 +52,7 @@ public class CircleService {
 
     private static final double BUFFER_FEE_RATE = 0.01;
     // Payout split: these can be tuned, they just need to sum to <= 1.
-    private static final double PAYOUT_LIEN_RATE = 0.15;
+    private static final double PAYOUT_LIEN_CAP_RATE = 0.30;
     private static final double PAYOUT_BUFFER_FEE_RATE = 0.02;
     // Reputation score weighting: placeholders, not tuned.
     private static final double REPUTATION_LIEN_WEIGHT = 0.5;
@@ -209,7 +209,6 @@ public class CircleService {
 
         // Scored once per member up front, not inside the comparator, since a sort can invoke
         // the comparator far more than once per element.
-        @SuppressWarnings("null")
         Map<UUID, Double> scoresByMembershipId = members.stream()
                 .collect(Collectors.toMap(CircleMembership::getId, m -> computeReputationScore(circle, m.getUser())));
         members.sort(Comparator
@@ -232,18 +231,16 @@ public class CircleService {
         long successes = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.COMPLETED);
         long withdrawals = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.WITHDRAWN);
         long defaults = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.DEFAULTED);
-        long penalizedFailures = withdrawals + defaults * DEFAULT_PENALTY_MULTIPLIER;
-        double smoothedSuccesses = successes + REPUTATION_SMOOTHING_PRIOR;
-        double smoothedFailures = penalizedFailures + REPUTATION_SMOOTHING_PRIOR;
-        double successRate = smoothedSuccesses / (smoothedSuccesses + smoothedFailures);
+        long penalizedFailures = TrustCalculations.calculatePenalizedFailures(withdrawals, defaults, DEFAULT_PENALTY_MULTIPLIER);
+        double successRate = TrustCalculations.calculateSuccessRate(successes, penalizedFailures, REPUTATION_SMOOTHING_PRIOR);
 
         double lienBalance = userAccountRepository.requireByUserIdAndType(user.getId(), UserAccountType.LIEN)
                 .getBalance().doubleValue();
         double worstCaseExposure = circle.getContributionAmount().doubleValue()
                 * (resolveSizingPolicy(circle).getTotalRounds(circle) - 1);
-        double lienCoverageRatio = Math.min(1.0, lienBalance / worstCaseExposure);
+        double lienCoverageRatio = TrustCalculations.calculateLienCoverageRatio(lienBalance, worstCaseExposure);
 
-        return REPUTATION_LIEN_WEIGHT * successRate + (1 - REPUTATION_LIEN_WEIGHT) * lienCoverageRatio;
+        return TrustCalculations.calculateReputationScore(successRate, lienCoverageRatio, REPUTATION_LIEN_WEIGHT);
     }
 
     private String generateInviteCode() {
@@ -282,21 +279,24 @@ public class CircleService {
     }
 
     public Transaction postPayout(UUID circlePotAccountId, UUID circlePayoutId, UUID recipientUserId,
-                                   BigDecimal grossAmount, String idempotencyKey) {
+                                   BigDecimal grossAmount, BigDecimal groupLoss, String idempotencyKey) {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(recipientUserId, UserAccountType.SAVINGS);
         UserAccount lien = userAccountRepository.requireByUserIdAndType(recipientUserId, UserAccountType.LIEN);
         UserAccount buffer = userAccountRepository.requireByUserIdAndType(
                 Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
 
-        BigDecimal lienShare = roundAmount(grossAmount.multiply(BigDecimal.valueOf(PAYOUT_LIEN_RATE)));
+        BigDecimal lienShare = roundAmount(
+                TrustCalculations.calculateCappedLienShare(groupLoss, lien.getBalance(), grossAmount, PAYOUT_LIEN_CAP_RATE));
         BigDecimal bufferFee = roundAmount(grossAmount.multiply(BigDecimal.valueOf(PAYOUT_BUFFER_FEE_RATE)));
         BigDecimal net = grossAmount.subtract(lienShare).subtract(bufferFee);
 
-        List<Leg> legs = List.of(
+        List<Leg> legs = new ArrayList<>(List.of(
                 new Leg(circlePotAccountId, grossAmount, BigDecimal.ZERO),
                 new Leg(savings.getId(), BigDecimal.ZERO, net),
-                new Leg(lien.getId(), BigDecimal.ZERO, lienShare),
-                new Leg(buffer.getId(), BigDecimal.ZERO, bufferFee));
+                new Leg(buffer.getId(), BigDecimal.ZERO, bufferFee)));
+        if (lienShare.signum() > 0) {
+            legs.add(new Leg(lien.getId(), BigDecimal.ZERO, lienShare));
+        }
         return transactionService.postLedgerTransaction(idempotencyKey, "PAYOUT", TransactionType.PAYOUT, grossAmount,
                 "Payout for circle payout " + circlePayoutId, legs,
                 transaction -> {
@@ -318,17 +318,31 @@ public class CircleService {
     }
 
     public Transaction postLienWithdrawal(UUID userId, BigDecimal amount, String idempotencyKey) {
-        boolean hasActiveMembership = circleMembershipRepository.existsByUser_IdAndStatus(userId, MembershipStatus.ACTIVE);
-        if (hasActiveMembership) {
-            throw new LienWithdrawalBlockedException("Cannot withdraw lien while an active circle membership exists");
-        }
         UserAccount lien = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.LIEN);
+        if (lien.getBalance().subtract(amount).compareTo(computeLienWithdrawalFloor(userId)) < 0) {
+            throw new LienWithdrawalBlockedException("Withdrawal would drop LIEN below the required floor");
+        }
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
         List<Leg> legs = List.of(
                 new Leg(lien.getId(), amount, BigDecimal.ZERO),
                 new Leg(savings.getId(), BigDecimal.ZERO, amount));
         return transactionService.postLedgerTransaction(idempotencyKey, "LIEN_WITHDRAWAL", TransactionType.LIEN_WITHDRAWAL,
                 amount, "Lien withdrawal", legs);
+    }
+
+    /** Zero if the member has no active circle, or their circle hasn't locked yet, so there's
+     * no position-justified commitment to protect. Otherwise their share of the group's
+     * remaining exposure for the rest of that circle. */
+    public BigDecimal computeLienWithdrawalFloor(UUID userId) {
+        return circleMembershipRepository.findByUser_IdAndStatus(userId, MembershipStatus.ACTIVE)
+                .filter(membership -> membership.getCircle().getStatus() == CircleStatus.ACTIVE)
+                .map(membership -> {
+                    Circle circle = membership.getCircle();
+                    int totalRounds = resolveSizingPolicy(circle).getTotalRounds(circle);
+                    return TrustCalculations.calculateGroupLoss(circle.getContributionAmount(), totalRounds,
+                            circle.getCurrentRound() - 1);
+                })
+                .orElse(BigDecimal.ZERO);
     }
 
     /** Default waterfall (design/v1.md §5): lien seized first, then the buffer covers the rest.
@@ -415,7 +429,6 @@ public class CircleService {
     // ---- scheduler interface: a scheduled job fetches due circles, then processes each one ----
 
     /** FIXED_SIZE circles never have an enrollmentDeadline, so they're naturally excluded here. */
-    @SuppressWarnings("null")
     public List<UUID> findCirclesWithClosedEnrollment() {
         Instant now = Instant.now();
         return circleRepository.findByStatusAndEnrollmentDeadlineIsNotNull(CircleStatus.FORMING).stream()
@@ -440,7 +453,6 @@ public class CircleService {
     }
 
     /** The scheduler is blind to how "due" is decided. It just gets ids to process. */
-    @SuppressWarnings("null")
     public List<UUID> findCirclesWithRoundsDueToday() {
         Instant now = Instant.now();
         return circleRepository.findByStatusAndLastRoundAtIsNotNull(CircleStatus.ACTIVE).stream()
@@ -477,7 +489,6 @@ public class CircleService {
         Circle circle = circleRepository.findById(circleId)
                 .orElseThrow(() -> new IllegalStateException("Circle not found: " + circleId));
         CircleAccount reserve = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.RESERVE);
-        @SuppressWarnings("null")
         List<UUID> unpaidMembershipIds = unpaidActiveMemberships(circle).stream().map(CircleMembership::getId).toList();
 
         for (UUID membershipId : unpaidMembershipIds) {
@@ -550,7 +561,9 @@ public class CircleService {
                     .roundNumber(circle.getCurrentRound())
                     .build());
 
-            postPayout(pot.getId(), payout.getId(), recipient.getId(), grossAmount,
+            BigDecimal groupLoss = resolveSizingPolicy(circle)
+                    .calculatePotentialGroupLoss(circle, recipient, recipientMembership.getPosition());
+            postPayout(pot.getId(), payout.getId(), recipient.getId(), grossAmount, groupLoss,
                     circleId + ":" + recipientMembership.getId() + ":payout-round-" + circle.getCurrentRound());
 
             circle.setCurrentRound(circle.getCurrentRound() + 1);
@@ -602,14 +615,20 @@ public class CircleService {
 
     private List<CircleMembership> unpaidActiveMemberships(Circle circle) {
         return circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE).stream()
-                .filter(m -> m.getLastContributedRound() == null || m.getLastContributedRound() < circle.getCurrentRound())
+                .filter(m -> {
+                    Integer lastContributedRound = m.getLastContributedRound();
+                    return lastContributedRound == null || lastContributedRound < circle.getCurrentRound();
+                })
                 .toList();
     }
 
     /** Who receives this circle's current round payout: the active membership assigned to this round's position. */
     private CircleMembership getCurrentPayoutReceiver(Circle circle) {
         return circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE).stream()
-                .filter(m -> m.getPosition() != null && m.getPosition() == circle.getCurrentRound())
+                .filter(m -> {
+                    Integer position = m.getPosition();
+                    return position != null && position == circle.getCurrentRound();
+                })
                 .findFirst()
                 .orElse(null);
     }

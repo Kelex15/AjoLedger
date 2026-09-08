@@ -7,6 +7,7 @@ import com.ajoledger.backend.circle.CircleInviteRepository;
 import com.ajoledger.backend.circle.CircleMembershipRepository;
 import com.ajoledger.backend.circle.CircleStatus;
 import com.ajoledger.backend.circle.MembershipStatus;
+import com.ajoledger.backend.circle.TrustCalculations;
 import com.ajoledger.backend.user.User;
 
 
@@ -53,8 +54,8 @@ public abstract class CircleSizingPolicy {
     }
 
     public BigDecimal calculatePotentialGroupLoss(Circle circle, User member, int payoutPosition) {
-        BigDecimal loss = circle.getContributionAmount()
-                .multiply(BigDecimal.valueOf(circle.getLockedMemberCount() - payoutPosition));
-        return circle.isGated() ? loss.multiply(GATED_LOSS_DISCOUNT) : loss;
+        BigDecimal loss = TrustCalculations.calculateGroupLoss(circle.getContributionAmount(),
+                circle.getLockedMemberCount(), payoutPosition);
+        return TrustCalculations.applyGatedDiscount(loss, circle.isGated(), GATED_LOSS_DISCOUNT);
     }
 }
