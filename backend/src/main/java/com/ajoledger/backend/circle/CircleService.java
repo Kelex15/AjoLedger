@@ -50,7 +50,6 @@ public class CircleService {
 
     private static final Logger log = LoggerFactory.getLogger(CircleService.class);
 
-    private static final double BUFFER_FEE_RATE = 0.01;
     // Payout split: these can be tuned, they just need to sum to <= 1.
     private static final double PAYOUT_LIEN_CAP_RATE = 0.30;
     private static final double PAYOUT_BUFFER_FEE_RATE = 0.02;
@@ -250,29 +249,19 @@ public class CircleService {
     public Transaction postContribution(UUID userId, UUID circleId, UUID circlePotAccountId,
                                          BigDecimal amount, String idempotencyKey) {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
-        UserAccount buffer = userAccountRepository.requireByUserIdAndType(
-                Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
-        BigDecimal fee = roundAmount(amount.multiply(BigDecimal.valueOf(BUFFER_FEE_RATE)));
-        BigDecimal netToPot = amount.subtract(fee);
         List<Leg> legs = List.of(
                 new Leg(savings.getId(), amount, BigDecimal.ZERO),
-                new Leg(circlePotAccountId, BigDecimal.ZERO, netToPot),
-                new Leg(buffer.getId(), BigDecimal.ZERO, fee));
+                new Leg(circlePotAccountId, BigDecimal.ZERO, amount));
         return transactionService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION", TransactionType.CONTRIBUTION,
                 amount, "Contribution to circle " + circleId, legs);
     }
 
-    /** Exact inverse of postContribution's legs. Full original amount back, including the fee. */
+    /** Exact inverse of postContribution's legs. */
     public Transaction postContributionRefund(UUID userId, UUID circleId, UUID circlePotAccountId,
                                                BigDecimal amount, String idempotencyKey) {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
-        UserAccount buffer = userAccountRepository.requireByUserIdAndType(
-                Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
-        BigDecimal fee = roundAmount(amount.multiply(BigDecimal.valueOf(BUFFER_FEE_RATE)));
-        BigDecimal netFromPot = amount.subtract(fee);
         List<Leg> legs = List.of(
-                new Leg(circlePotAccountId, netFromPot, BigDecimal.ZERO),
-                new Leg(buffer.getId(), fee, BigDecimal.ZERO),
+                new Leg(circlePotAccountId, amount, BigDecimal.ZERO),
                 new Leg(savings.getId(), BigDecimal.ZERO, amount));
         return transactionService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION_REFUND",
                 TransactionType.CONTRIBUTION_REFUND, amount, "Contribution refund for circle " + circleId, legs);
@@ -550,9 +539,8 @@ public class CircleService {
             releaseReserveShare(circle);
             // Fetched after the reserve release, whose JDBC-side balance update this JPA read must see.
             CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
-            // Pay out what the pot actually holds, not calculatePotSize's theoretical figure. The
-            // pot never holds the full contributionAmount because postContribution skims a fee
-            // off each contribution before crediting it.
+            // Pay out what the pot actually holds, not calculatePotSize's theoretical figure —
+            // a reserve release (above) can top it up beyond that on a round following a default.
             BigDecimal grossAmount = pot.getBalance();
 
             CirclePayout payout = circlePayoutRepository.save(CirclePayout.builder()
