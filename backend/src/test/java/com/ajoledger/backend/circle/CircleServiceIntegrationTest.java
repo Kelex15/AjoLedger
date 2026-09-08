@@ -20,6 +20,8 @@ import java.util.UUID;
 import com.ajoledger.backend.account.AccountService;
 import com.ajoledger.backend.account.CircleAccountType;
 import com.ajoledger.backend.account.UserAccountType;
+import com.ajoledger.backend.account.entity.CircleAccount;
+import com.ajoledger.backend.account.repository.UserAccountRepository;
 import com.ajoledger.backend.circle.dto.CircleCreateRequestDTO;
 import com.ajoledger.backend.circle.exception.CircleActionNotAllowedException;
 import com.ajoledger.backend.circle.exception.CircleCreatorRequiredException;
@@ -30,6 +32,7 @@ import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
+import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.transaction.exception.LienWithdrawalBlockedException;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
@@ -59,6 +62,8 @@ class CircleServiceIntegrationTest {
     private UserRepository userRepository;
     @Autowired
     private AccountService accountService;
+    @Autowired
+    private UserAccountRepository userAccountRepository;
     @Autowired
     private FundingService fundingService;
     @Autowired
@@ -503,6 +508,33 @@ class CircleServiceIntegrationTest {
 
     private BigDecimal reserveBalance(UUID circleId) {
         return accountService.getCircleAccount(circleId, CircleAccountType.RESERVE).orElseThrow().getBalance();
+    }
+
+    @Test
+    void bufferDrawIsCappedAndDoesNotFullyDrainOnALargeDefault() {
+        // Calls postDefaultWaterfall directly rather than driving a default through
+        // processRoundDeadline, since a real round resolution would also pay out whoever's
+        // next in line in the same call, confounding the buffer's balance with an unrelated
+        // payout's own buffer-fee credit.
+        User defaulter = createFundedUser(new BigDecimal("500.00"));
+        Circle circle = circleService.createCircle(defaulter.getId(), createRequest(2, false)); // stays FORMING; just need its RESERVE account
+        CircleMembership membership = activeMembershipFor(circle.getId(), defaulter.getId());
+        CircleAccount reserve = accountService.getCircleAccount(circle.getId(), CircleAccountType.RESERVE).orElseThrow();
+
+        fundingService.postDeposit(Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER, FundingType.STRIPE,
+                new BigDecimal("1000.00"), UUID.randomUUID().toString());
+        BigDecimal bufferBefore = userAccountRepository
+                .requireByUserIdAndType(Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER).getBalance();
+
+        // A group loss this large vastly exceeds both the defaulter's own (small) LIEN and the
+        // entire buffer, regardless of its exact pre-test balance.
+        circleService.postDefaultWaterfall(defaulter.getId(), membership.getId(), reserve.getId(),
+                new BigDecimal("1000000.00"), UUID.randomUUID().toString());
+
+        BigDecimal bufferAfter = userAccountRepository
+                .requireByUserIdAndType(Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER).getBalance();
+        // some draw happened, but the buffer wasn't fully drained despite a loss far exceeding it
+        assertThat(bufferAfter).isPositive().isLessThan(bufferBefore);
     }
 
     @Test

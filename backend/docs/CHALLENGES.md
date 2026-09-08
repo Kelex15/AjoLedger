@@ -2,6 +2,16 @@
 
 Real problems hit while building this, and how I solved them — the messy part in between the ADRs (decisions made before writing code) and HOW_IT_WORKS.md (how the finished mechanism works).
 
+## Round 1's payout was silently short by the last joiner's own contribution
+
+**Date:** 2026-09-08
+**What I was trying to do:** Write an integration test proving the shared insurance buffer's draw is capped per default (a new rule), using a deliberately huge contribution amount so the resulting default's loss would unambiguously dwarf the buffer regardless of its exact starting balance.
+**What went wrong:** The test's own debug output showed the circle's pot still holding the last joiner's entire contribution after round 1's payout had already happened, money that should have been paid out, silently stranded instead. The payout's buffer-fee credit was exactly half what it should have been, meaning the whole payout had been computed off half the real pot.
+**Why it happened:** `joinCircle` loads the pot's `CircleAccount` via JPA early on, just to get its id for the contribution write. When the last member's own join fills the circle, that same `joinCircle` call synchronously activates it and resolves round 1, all inside one `@Transactional` boundary. The round-1 payout re-reads the pot's balance from JPA, but by Hibernate's identity-map rules, that "fresh" read returns the same already-managed, already-stale object from the early load, predating the raw-JDBC contribution write that had happened in between. Every circle's round 1 had been quietly short by exactly the last joiner's contribution since the feature was first built, invisible until now because no earlier test asserted an exact payout amount precise enough to notice the gap.
+**How I fixed it:** Swapped every balance read in `CircleService` that could plausibly follow an earlier raw-JDBC write in the same transaction, not just the one provably broken, from the cached JPA entity's `.getBalance()` field to `LedgerDao.getBalance(accountId)`, which computes the true balance straight from `ledger_entry` and is immune to persistence-context staleness by construction.
+**What I'd do differently / what this taught me:** A large-number test isn't just a bigger version of a small-number test. It made a bug visible that had been arithmetically undetectable at $100 scale (a stray $100 rounding into round 2 looks like nothing; a stray $1,000,000 doesn't). Any place this codebase reads a JPA-loaded account's balance mid-transaction is a candidate for this exact bug, not just the one the test happened to catch.
+**Short version:** A test using unusually large numbers surfaced a real bug: round 1's payout had been silently short by the last joiner's own contribution in every circle, because a JPA-loaded pot entity went stale the instant a raw-JDBC contribution write landed later in the same transaction. Fixed by reading every at-risk balance straight from the ledger instead of the cached entity field.
+
 ## Comparing success rates across wildly different sample sizes
 
 **Date:** 2026-09-07

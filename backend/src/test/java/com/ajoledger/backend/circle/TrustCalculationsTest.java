@@ -108,4 +108,18 @@ class TrustCalculationsTest {
 
         assertThat(share).isEqualByComparingTo("0.00");
     }
+
+    @Test
+    void cappedAmountReturnsTheFullNeedWhenUnderTheCap() {
+        BigDecimal capped = TrustCalculations.calculateCappedAmount(new BigDecimal("20.00"), new BigDecimal("1000.00"), 0.30);
+
+        assertThat(capped).isEqualByComparingTo("20.00");
+    }
+
+    @Test
+    void cappedAmountIsLimitedByTheCapEvenWhenNeedIsLarger() {
+        BigDecimal capped = TrustCalculations.calculateCappedAmount(new BigDecimal("1000.00"), new BigDecimal("200.00"), 0.30);
+
+        assertThat(capped).isEqualByComparingTo("60.00");
+    }
 }

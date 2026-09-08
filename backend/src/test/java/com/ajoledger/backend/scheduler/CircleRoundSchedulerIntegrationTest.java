@@ -84,6 +84,16 @@ class CircleRoundSchedulerIntegrationTest {
         Circle circle = circleService.createCircle(creator.getId(), dto);
         circleService.joinCircle(member2.getId(), circle.getId());
 
+        // Drain whoever round 1 paid out - their own payout would otherwise cover round 2's
+        // contribution on its own, so neither member would actually be short.
+        for (User member : List.of(creator, member2)) {
+            BigDecimal balance = accountService.getUserAccount(member.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance();
+            if (balance.signum() > 0) {
+                fundingService.postWithdrawal(member.getId(), UserAccountType.SAVINGS, FundingType.STRIPE,
+                        balance, UUID.randomUUID().toString());
+            }
+        }
+
         Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
         reloaded.setLastRoundAt(Instant.now().minus(Duration.ofDays((reloaded.getTerm() + 1L) * 7)));
         return circleRepository.save(reloaded);

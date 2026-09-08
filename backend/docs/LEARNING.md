@@ -2,6 +2,14 @@
 
 Concepts worth understanding deeply, not just using, as they come up while building this.
 
+## Hibernate's persistence-context identity map hides raw-JDBC writes
+
+**Where it shows up:** `CircleService.joinCircle`/`resolveRoundIfComplete`, the `CircleAccount` (pot) balance read at payout time.
+**Why it matters here:** ADR-0004 splits this system's account layer in two: JPA for entity reads, raw `JdbcTemplate` for every balance-affecting ledger write. That split assumes a JPA-loaded account's `balance` field is safe to trust. It isn't, within a single transaction, once a raw-JDBC write to that same row has happened in between.
+**What to actually learn (not just use):** A JPA persistence context (Hibernate `Session`) guarantees object identity: every query for the same entity id within one transaction returns the *same* Java object instance, not a fresh one re-hydrated from the latest row. This holds even for a derived/JPQL query, not just `find()` by id. Hibernate still executes the SQL, but then discards the freshly-read column values in favor of whatever the already-managed instance already holds in memory. A raw JDBC `UPDATE` (like this ledger's balance writes) never touches that in-memory state at all, so any entity loaded before such a write, and read again after it within the same transaction, silently returns stale data, with no error and nothing to indicate the read is wrong.
+**Where to start:** Hibernate's reference docs on the persistence context / first-level cache explain the identity-map guarantee directly. The practical fix in this codebase was reading the true balance straight from `ledger_entry` (`LedgerDao.getBalance`, already built for verification purposes) instead of the cached entity field, anywhere a balance is read mid-transaction after an earlier write.
+**You should know:** "Have you seen a case where an ORM's caching caused a wrong read, not just a wrong write?" This is a concrete one: a JPA entity loaded early in a transaction (to get its id) silently going stale the moment a raw-SQL write to that same row happens later in the same transaction, with the ORM never re-checking.
+
 ## Laplace smoothing for ranking small-sample ratios
 
 **Where it shows up:** `CircleService.computeReputationScore` — the `successRate` term.

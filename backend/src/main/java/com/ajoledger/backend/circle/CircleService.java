@@ -16,6 +16,8 @@ import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
 import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
 import com.ajoledger.backend.circle.exception.InviteNotFoundException;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
+import com.ajoledger.backend.email.EmailSender;
+import com.ajoledger.backend.ledger.LedgerDao;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.transaction.Leg;
@@ -53,6 +55,8 @@ public class CircleService {
     // Payout split: these can be tuned, they just need to sum to <= 1.
     private static final double PAYOUT_LIEN_CAP_RATE = 0.30;
     private static final double PAYOUT_BUFFER_FEE_RATE = 0.02;
+    // Placeholder, not tuned: caps how much of the shared buffer a single default can draw.
+    private static final double BUFFER_DRAW_CAP_RATE = 0.30;
     // Reputation score weighting: placeholders, not tuned.
     private static final double REPUTATION_LIEN_WEIGHT = 0.5;
     private static final long DEFAULT_PENALTY_MULTIPLIER = 3;
@@ -68,6 +72,8 @@ public class CircleService {
     private final Map<String, CircleSizingPolicy> sizingPoliciesByType;
     private final AccountService accountService;
     private final UserRepository userRepository;
+    private final EmailSender emailSender;
+    private final LedgerDao ledgerDao;
 
     private CircleSizingPolicy resolveSizingPolicy(Circle circle) {
         return sizingPoliciesByType.get(circle.getSizingPolicyType().name());
@@ -235,8 +241,8 @@ public class CircleService {
         long penalizedFailures = TrustCalculations.calculatePenalizedFailures(withdrawals, defaults, DEFAULT_PENALTY_MULTIPLIER);
         double successRate = TrustCalculations.calculateSuccessRate(successes, penalizedFailures, REPUTATION_SMOOTHING_PRIOR);
 
-        double lienBalance = userAccountRepository.requireByUserIdAndType(user.getId(), UserAccountType.LIEN)
-                .getBalance().doubleValue();
+        UserAccount lienAccount = userAccountRepository.requireByUserIdAndType(user.getId(), UserAccountType.LIEN);
+        double lienBalance = ledgerDao.getBalance(lienAccount.getId()).doubleValue();
         double worstCaseExposure = circle.getContributionAmount().doubleValue()
                 * (resolveSizingPolicy(circle).getTotalRounds(circle) - 1);
         double lienCoverageRatio = TrustCalculations.calculateLienCoverageRatio(lienBalance, worstCaseExposure);
@@ -277,7 +283,7 @@ public class CircleService {
                 Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
 
         BigDecimal lienShare = roundAmount(
-                TrustCalculations.calculateCappedLienShare(groupLoss, lien.getBalance(), grossAmount, PAYOUT_LIEN_CAP_RATE));
+                TrustCalculations.calculateCappedLienShare(groupLoss, ledgerDao.getBalance(lien.getId()), grossAmount, PAYOUT_LIEN_CAP_RATE));
         BigDecimal bufferFee = roundAmount(grossAmount.multiply(BigDecimal.valueOf(PAYOUT_BUFFER_FEE_RATE)));
         BigDecimal net = grossAmount.subtract(lienShare).subtract(bufferFee);
 
@@ -310,7 +316,7 @@ public class CircleService {
 
     public Transaction postLienWithdrawal(UUID userId, BigDecimal amount, String idempotencyKey) {
         UserAccount lien = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.LIEN);
-        if (lien.getBalance().subtract(amount).compareTo(computeLienWithdrawalFloor(userId)) < 0) {
+        if (ledgerDao.getBalance(lien.getId()).subtract(amount).compareTo(computeLienWithdrawalFloor(userId)) < 0) {
             throw new LienWithdrawalBlockedException("Withdrawal would drop LIEN below the required floor");
         }
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
@@ -345,7 +351,7 @@ public class CircleService {
         UserAccount buffer = userAccountRepository.requireByUserIdAndType(
                 Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
 
-        BigDecimal lienBalance = lien.getBalance();
+        BigDecimal lienBalance = ledgerDao.getBalance(lien.getId());
         BigDecimal seizedFromLien = lienBalance.min(groupLoss);
         BigDecimal remainingLoss = groupLoss.subtract(seizedFromLien);
 
@@ -361,7 +367,8 @@ public class CircleService {
         }
 
         if (remainingLoss.signum() > 0) {
-            BigDecimal bufferPayout = buffer.getBalance().min(remainingLoss);
+            BigDecimal bufferPayout = TrustCalculations.calculateCappedAmount(remainingLoss, ledgerDao.getBalance(buffer.getId()),
+                    BUFFER_DRAW_CAP_RATE);
             if (bufferPayout.signum() > 0) {
                 List<Leg> bufferLegs = List.of(
                         new Leg(buffer.getId(), bufferPayout, BigDecimal.ZERO),
@@ -376,8 +383,8 @@ public class CircleService {
         return transactions;
     }
 
-    /** GROUP_SHORTFALL_ABSORPTION isn't designed yet (design/v1.md §5). Logged, not thrown,
-     * since the waterfall itself did all it could. */
+    /** Nothing further to recover here - an unrecovered shortfall just means the circle's own
+     * future rounds pay out proportionally less (design/v3.md §5), not a new transfer to post. */
     private void flagUnrecoveredShortfall(UUID circleMembershipId, BigDecimal unrecoveredShortfall) {
         if (unrecoveredShortfall.signum() > 0) {
             log.warn("Circle default shortfall not fully covered for membership {}: ${} unrecovered after lien + buffer",
@@ -501,12 +508,25 @@ public class CircleService {
 
                 membership.setStatus(MembershipStatus.DEFAULTED);
                 circleMembershipRepository.save(membership);
+                notifyOfDefault(circle, user, groupLoss);
             } else {
                 int withdrawnPosition = membership.getPosition();
                 membership.setStatus(MembershipStatus.WITHDRAWN);
                 circleMembershipRepository.save(membership);
                 compactPositionsAfterWithdrawal(circle, withdrawnPosition);
             }
+        }
+    }
+
+    /** Defaulter gets their own message; every other active member (excludes the defaulter,
+     * already flipped to DEFAULTED by the time this runs) gets a group-facing one. */
+    private void notifyOfDefault(Circle circle, User defaulter, BigDecimal groupLoss) {
+        emailSender.sendDefaultNotificationEmail(defaulter.getEmail(),
+                "You defaulted on circle \"" + circle.getName() + "\". Loss incurred: $" + groupLoss);
+
+        String groupMessage = "A member of your circle \"" + circle.getName() + "\" defaulted. Loss incurred: $" + groupLoss;
+        for (CircleMembership membership : circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE)) {
+            emailSender.sendDefaultNotificationEmail(membership.getUser().getEmail(), groupMessage);
         }
     }
 
@@ -539,11 +559,10 @@ public class CircleService {
         if (recipientMembership != null) {
             User recipient = recipientMembership.getUser();
             releaseReserveShare(circle);
-            // Fetched after the reserve release, whose JDBC-side balance update this JPA read must see.
             CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
             // Pay out what the pot actually holds, not calculatePotSize's theoretical figure —
             // a reserve release (above) can top it up beyond that on a round following a default.
-            BigDecimal grossAmount = pot.getBalance();
+            BigDecimal grossAmount = ledgerDao.getBalance(pot.getId());
 
             CirclePayout payout = circlePayoutRepository.save(CirclePayout.builder()
                     .circle(circle)
@@ -586,7 +605,7 @@ public class CircleService {
     private void releaseReserveShare(Circle circle) {
         UUID circleId = circle.getId();
         CircleAccount reserve = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.RESERVE);
-        BigDecimal reserveBalance = reserve.getBalance();
+        BigDecimal reserveBalance = ledgerDao.getBalance(reserve.getId());
         if (reserveBalance.signum() <= 0) {
             return;
         }

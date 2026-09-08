@@ -39,7 +39,11 @@ public final class TrustCalculations {
     public static BigDecimal calculateCappedLienShare(BigDecimal groupLoss, BigDecimal currentLienBalance,
                                                         BigDecimal grossAmount, double capRate) {
         BigDecimal neededTopUp = groupLoss.subtract(currentLienBalance).max(BigDecimal.ZERO);
-        BigDecimal cap = grossAmount.multiply(BigDecimal.valueOf(capRate));
-        return neededTopUp.min(cap);
+        return calculateCappedAmount(neededTopUp, grossAmount, capRate);
+    }
+
+    public static BigDecimal calculateCappedAmount(BigDecimal needed, BigDecimal referenceAmount, double capRate) {
+        BigDecimal cap = referenceAmount.multiply(BigDecimal.valueOf(capRate));
+        return needed.min(cap);
     }
 }
