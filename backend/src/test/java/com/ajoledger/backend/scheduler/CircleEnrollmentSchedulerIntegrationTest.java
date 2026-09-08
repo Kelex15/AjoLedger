@@ -71,8 +71,8 @@ class CircleEnrollmentSchedulerIntegrationTest {
     /** Two members, the platform minimum, join before the deadline gets pushed into the past,
      * so closing enrollment activates the circle without also immediately completing it. */
     private Circle createPastDeadlineOpenEnrollmentCircle() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User member2 = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
 
         CircleCreateRequestDTO dto = CircleCreateRequestDTO.builder()
                 .name("Test Circle")

@@ -13,8 +13,9 @@ import com.ajoledger.backend.user.User;
 
 public abstract class CircleSizingPolicy {
 
-    // Placeholder, not tuned yet.
+    // Placeholders, not tuned yet.
     private static final BigDecimal GATED_LOSS_DISCOUNT = new BigDecimal("0.5");
+    private static final double JOIN_COLLATERAL_RATE = 0.10;
 
     protected final CircleInviteRepository circleInviteRepository;
     protected final CircleMembershipRepository circleMembershipRepository;
@@ -57,5 +58,12 @@ public abstract class CircleSizingPolicy {
         BigDecimal loss = TrustCalculations.calculateGroupLoss(circle.getContributionAmount(),
                 circle.getLockedMemberCount(), payoutPosition);
         return TrustCalculations.applyGatedDiscount(loss, circle.isGated(), GATED_LOSS_DISCOUNT);
+    }
+
+    /** Flat, uniform join-time hold, unrelated to eventual payout position (not known until
+     * lock). Safe to call pre-lock, unlike calculatePotentialGroupLoss/getTotalRounds. */
+    public BigDecimal calculateJoinCollateral(Circle circle) {
+        BigDecimal base = circle.getContributionAmount().multiply(BigDecimal.valueOf(JOIN_COLLATERAL_RATE));
+        return TrustCalculations.applyGatedDiscount(base, circle.isGated(), GATED_LOSS_DISCOUNT);
     }
 }

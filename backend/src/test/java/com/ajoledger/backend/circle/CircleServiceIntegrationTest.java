@@ -109,8 +109,8 @@ class CircleServiceIntegrationTest {
 
     @Test
     void openCircleActivatesAndPaysRoundOneOnLastJoin() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User member2 = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
 
         Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
         circleService.joinCircle(member2.getId(), circle.getId());
@@ -130,8 +130,8 @@ class CircleServiceIntegrationTest {
 
     @Test
     void gatedCircleBlocksJoinWithoutInvite() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User outsider = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User outsider = createFundedUser(new BigDecimal("110.00"));
 
         Circle circle = circleService.createCircle(creator.getId(), createRequest(2, true));
 
@@ -141,8 +141,8 @@ class CircleServiceIntegrationTest {
 
     @Test
     void invitedByUsernameCanRedeemAndJoin() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User invitee = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User invitee = createFundedUser(new BigDecimal("110.00"));
 
         Circle circle = circleService.createCircle(creator.getId(), createRequest(2, true));
         CircleInvite invite = circleService.inviteToCircle(circle.getId(), creator.getId(), invitee.getUsername(), null);
@@ -155,7 +155,7 @@ class CircleServiceIntegrationTest {
 
     @Test
     void invitedByEmailForNewUserCanRedeemAfterSignupAndJoin() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
         String futureEmail = "future-" + UUID.randomUUID() + "@example.com";
 
         Circle circle = circleService.createCircle(creator.getId(), createRequest(2, true));
@@ -166,7 +166,7 @@ class CircleServiceIntegrationTest {
         accountService.createUserAccount(newUser, UserAccountType.SAVINGS);
         accountService.createUserAccount(newUser, UserAccountType.LIEN);
         fundingService.postDeposit(newUser.getId(), UserAccountType.SAVINGS, FundingType.STRIPE,
-                new BigDecimal("100.00"), UUID.randomUUID().toString());
+                new BigDecimal("110.00"), UUID.randomUUID().toString());
 
         circleService.redeemInvite(invite.getCode(), newUser.getId());
         circleService.joinCircle(newUser.getId(), circle.getId());
@@ -177,9 +177,9 @@ class CircleServiceIntegrationTest {
 
     @Test
     void redeemWithMismatchedIdentityIsRejected() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User invitee = createFundedUser(new BigDecimal("100.00"));
-        User outsider = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User invitee = createFundedUser(new BigDecimal("110.00"));
+        User outsider = createFundedUser(new BigDecimal("110.00"));
 
         Circle circle = circleService.createCircle(creator.getId(), createRequest(3, true));
         CircleInvite invite = circleService.inviteToCircle(circle.getId(), creator.getId(), invitee.getUsername(), null);
@@ -190,8 +190,8 @@ class CircleServiceIntegrationTest {
 
     @Test
     void redeemingAlreadyRedeemedCodeIsRejected() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User invitee = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User invitee = createFundedUser(new BigDecimal("110.00"));
 
         Circle circle = circleService.createCircle(creator.getId(), createRequest(3, true));
         CircleInvite invite = circleService.inviteToCircle(circle.getId(), creator.getId(), invitee.getUsername(), null);
@@ -203,7 +203,7 @@ class CircleServiceIntegrationTest {
 
     @Test
     void insufficientBalanceOnJoinRollsBackEntireJoin() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
         User poorMember = createUser("test-" + UUID.randomUUID() + "@example.com");
         accountService.createUserAccount(poorMember, UserAccountType.SAVINGS);
         accountService.createUserAccount(poorMember, UserAccountType.LIEN);
@@ -222,14 +222,71 @@ class CircleServiceIntegrationTest {
     }
 
     @Test
+    void joinCollateralIsHeldInLienAtJoinTime() {
+        User joiner = createFundedUser(new BigDecimal("110.00"));
+        BigDecimal savingsBefore = accountService.getUserAccount(joiner.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
+        BigDecimal lienBefore = accountService.getUserAccount(joiner.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+
+        circleService.createCircle(joiner.getId(), createRequest(2, false));
+
+        BigDecimal lienAfter = accountService.getUserAccount(joiner.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+        BigDecimal savingsAfter = accountService.getUserAccount(joiner.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
+
+        BigDecimal collateralHeld = lienAfter.subtract(lienBefore);
+        assertThat(collateralHeld).isPositive();
+        // SAVINGS dropped by more than just the contribution amount - the collateral came out of it too.
+        assertThat(savingsBefore.subtract(savingsAfter)).isEqualByComparingTo(
+                new BigDecimal("100.00").add(collateralHeld));
+    }
+
+    @Test
+    void gatedCircleRequiresLessJoinCollateralThanOpen() {
+        User openCreator = createFundedUser(new BigDecimal("110.00"));
+        BigDecimal openLienBefore = accountService.getUserAccount(openCreator.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+        circleService.createCircle(openCreator.getId(), createRequest(2, false));
+        BigDecimal openCollateral = accountService.getUserAccount(openCreator.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance().subtract(openLienBefore);
+
+        User gatedCreator = createFundedUser(new BigDecimal("110.00"));
+        BigDecimal gatedLienBefore = accountService.getUserAccount(gatedCreator.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+        circleService.createCircle(gatedCreator.getId(), createRequest(2, true));
+        BigDecimal gatedCollateral = accountService.getUserAccount(gatedCreator.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance().subtract(gatedLienBefore);
+
+        assertThat(gatedCollateral).isLessThan(openCollateral);
+    }
+
+    @Test
+    void insufficientSavingsForContributionPlusCollateralRollsBackTheWholeJoin() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User tightMember = createFundedUser(new BigDecimal("100.00")); // exactly the contribution, no room for collateral
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+
+        assertThatThrownBy(() -> circleService.joinCircle(tightMember.getId(), circle.getId()))
+                .isInstanceOf(InsufficientBalanceException.class);
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE))
+                .hasSize(1); // only the creator - tightMember's membership never persisted
+        assertThat(accountService.getUserAccount(tightMember.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
+                .isEqualByComparingTo("100.00"); // untouched - the whole join rolled back
+    }
+
+    @Test
     void gatedCircleDiscountsPotentialGroupLoss() {
-        User openCreator = createFundedUser(new BigDecimal("100.00"));
-        User openMember2 = createFundedUser(new BigDecimal("100.00"));
+        User openCreator = createFundedUser(new BigDecimal("110.00"));
+        User openMember2 = createFundedUser(new BigDecimal("110.00"));
         Circle openCircle = circleService.createCircle(openCreator.getId(), createRequest(2, false));
         circleService.joinCircle(openMember2.getId(), openCircle.getId());
 
-        User gatedCreator = createFundedUser(new BigDecimal("100.00"));
-        User gatedMember2 = createFundedUser(new BigDecimal("100.00"));
+        User gatedCreator = createFundedUser(new BigDecimal("110.00"));
+        User gatedMember2 = createFundedUser(new BigDecimal("110.00"));
         Circle gatedCircle = circleService.createCircle(gatedCreator.getId(), createRequest(2, true));
         CircleInvite invite = circleService.inviteToCircle(gatedCircle.getId(), gatedCreator.getId(), gatedMember2.getUsername(), null);
         circleService.redeemInvite(invite.getCode(), gatedMember2.getId());
@@ -247,18 +304,18 @@ class CircleServiceIntegrationTest {
 
     @Test
     void findCirclesWithRoundsDueTodayReturnsOnlyOverdueActiveCircles() {
-        User overdueCreator = createFundedUser(new BigDecimal("100.00"));
-        User overdueMember = createFundedUser(new BigDecimal("100.00"));
+        User overdueCreator = createFundedUser(new BigDecimal("110.00"));
+        User overdueMember = createFundedUser(new BigDecimal("110.00"));
         Circle overdueCircle = circleService.createCircle(overdueCreator.getId(), createRequest(2, false));
         circleService.joinCircle(overdueMember.getId(), overdueCircle.getId());
         pushPastDeadline(overdueCircle.getId());
 
-        User notDueCreator = createFundedUser(new BigDecimal("100.00"));
-        User notDueMember = createFundedUser(new BigDecimal("100.00"));
+        User notDueCreator = createFundedUser(new BigDecimal("110.00"));
+        User notDueMember = createFundedUser(new BigDecimal("110.00"));
         Circle notDueCircle = circleService.createCircle(notDueCreator.getId(), createRequest(2, false));
         circleService.joinCircle(notDueMember.getId(), notDueCircle.getId()); // just activated, not due yet
 
-        Circle formingCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
+        Circle formingCircle = circleService.createCircle(createFundedUser(new BigDecimal("110.00")).getId(),
                 createRequest(2, false)); // only the creator joined - still FORMING
 
         List<UUID> due = circleService.findCirclesWithRoundsDueToday();
@@ -276,8 +333,8 @@ class CircleServiceIntegrationTest {
 
     @Test
     void openEnrollmentCircleActivatesEarlyWhenCapHit() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User member2 = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
 
         Circle circle = circleService.createCircle(creator.getId(),
                 openEnrollmentRequest(2, null, Instant.now().plus(Duration.ofDays(30))));
@@ -290,14 +347,14 @@ class CircleServiceIntegrationTest {
 
     @Test
     void findCirclesWithClosedEnrollmentReturnsOnlyPastDeadlineFormingCircles() {
-        Circle pastDeadlineCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
+        Circle pastDeadlineCircle = circleService.createCircle(createFundedUser(new BigDecimal("110.00")).getId(),
                 openEnrollmentRequest(5, null, Instant.now().plus(Duration.ofDays(30))));
         pushPastEnrollmentDeadline(pastDeadlineCircle.getId());
 
-        Circle futureDeadlineCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
+        Circle futureDeadlineCircle = circleService.createCircle(createFundedUser(new BigDecimal("110.00")).getId(),
                 openEnrollmentRequest(5, null, Instant.now().plus(Duration.ofDays(30))));
 
-        Circle fixedSizeCircle = circleService.createCircle(createFundedUser(new BigDecimal("100.00")).getId(),
+        Circle fixedSizeCircle = circleService.createCircle(createFundedUser(new BigDecimal("110.00")).getId(),
                 createRequest(2, false));
 
         List<UUID> closed = circleService.findCirclesWithClosedEnrollment();
@@ -308,8 +365,8 @@ class CircleServiceIntegrationTest {
 
     @Test
     void closeEnrollmentActivatesWhenMinimumMet() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User member2 = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
 
         Circle circle = circleService.createCircle(creator.getId(),
                 openEnrollmentRequest(5, 2, Instant.now().plus(Duration.ofDays(30))));
@@ -326,10 +383,14 @@ class CircleServiceIntegrationTest {
 
     @Test
     void closeEnrollmentDissolvesAndRefundsInFullWhenMinimumNotMet() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        BigDecimal savingsBefore = accountService.getUserAccount(creator.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
 
         Circle circle = circleService.createCircle(creator.getId(),
                 openEnrollmentRequest(5, 3, Instant.now().plus(Duration.ofDays(30)))); // only the creator ends up joining
+        BigDecimal lienAfterJoin = accountService.getUserAccount(creator.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
         pushPastEnrollmentDeadline(circle.getId());
 
         circleService.closeEnrollment(circle.getId());
@@ -338,16 +399,29 @@ class CircleServiceIntegrationTest {
         assertThat(reloaded.getStatus()).isEqualTo(CircleStatus.DISSOLVED);
         assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.DISSOLVED))
                 .hasSize(1);
+        // contribution refunded to SAVINGS; the join-time LIEN collateral is untouched by dissolution,
+        // still theirs and immediately withdrawable now that the membership is no longer ACTIVE.
+        assertThat(accountService.getUserAccount(creator.getId(), UserAccountType.LIEN).orElseThrow().getBalance())
+                .isEqualByComparingTo(lienAfterJoin);
         assertThat(accountService.getUserAccount(creator.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
-                .isEqualByComparingTo("100.00"); // refunded in full, back to their pre-join balance
+                .isEqualByComparingTo(savingsBefore.subtract(lienAfterJoin));
     }
 
     @Test
     void cancelCircleRefundsPartiallyFilledFixedSizeCircleInFull() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User member2 = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+        BigDecimal creatorSavingsBefore = accountService.getUserAccount(creator.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
+        BigDecimal member2SavingsBefore = accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
+
         Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false)); // room for 1 more
         circleService.joinCircle(member2.getId(), circle.getId());
+        BigDecimal creatorLienAfterJoin = accountService.getUserAccount(creator.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+        BigDecimal member2LienAfterJoin = accountService.getUserAccount(member2.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
 
         circleService.cancelCircle(circle.getId(), creator.getId());
 
@@ -355,16 +429,21 @@ class CircleServiceIntegrationTest {
         assertThat(reloaded.getStatus()).isEqualTo(CircleStatus.DISSOLVED);
         assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.DISSOLVED))
                 .hasSize(2);
+        // contribution refunded to SAVINGS; the join-time LIEN collateral stays put, untouched by dissolution.
+        assertThat(accountService.getUserAccount(creator.getId(), UserAccountType.LIEN).orElseThrow().getBalance())
+                .isEqualByComparingTo(creatorLienAfterJoin);
         assertThat(accountService.getUserAccount(creator.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
-                .isEqualByComparingTo("100.00");
+                .isEqualByComparingTo(creatorSavingsBefore.subtract(creatorLienAfterJoin));
+        assertThat(accountService.getUserAccount(member2.getId(), UserAccountType.LIEN).orElseThrow().getBalance())
+                .isEqualByComparingTo(member2LienAfterJoin);
         assertThat(accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
-                .isEqualByComparingTo("100.00");
+                .isEqualByComparingTo(member2SavingsBefore.subtract(member2LienAfterJoin));
     }
 
     @Test
     void cancelCircleRejectsNonCreator() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User outsider = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User outsider = createFundedUser(new BigDecimal("110.00"));
         Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
 
         assertThatThrownBy(() -> circleService.cancelCircle(circle.getId(), outsider.getId()))
@@ -373,8 +452,8 @@ class CircleServiceIntegrationTest {
 
     @Test
     void cancelCircleRejectsAlreadyActiveCircle() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User member2 = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
         Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
         circleService.joinCircle(member2.getId(), circle.getId()); // fills it, activates
 
@@ -429,7 +508,7 @@ class CircleServiceIntegrationTest {
     @Test
     void positionCompactionAfterSingleWithdrawalResolvesCircleToCompletion() {
         User creator = createFundedUser(new BigDecimal("500.00"));
-        User m2 = createFundedUser(new BigDecimal("100.00")); // enough for round 1 only
+        User m2 = createFundedUser(new BigDecimal("110.00")); // enough for round 1 only
         User m3 = createFundedUser(new BigDecimal("500.00"));
         User m4 = createFundedUser(new BigDecimal("500.00"));
 
@@ -465,8 +544,8 @@ class CircleServiceIntegrationTest {
     @Test
     void simultaneousWithdrawalsInSameRoundCompactPositionsCorrectly() {
         User creator = createFundedUser(new BigDecimal("500.00"));
-        User m2 = createFundedUser(new BigDecimal("100.00")); // enough for round 1 only
-        User m3 = createFundedUser(new BigDecimal("100.00")); // enough for round 1 only
+        User m2 = createFundedUser(new BigDecimal("110.00")); // enough for round 1 only
+        User m3 = createFundedUser(new BigDecimal("110.00")); // enough for round 1 only
         User m4 = createFundedUser(new BigDecimal("500.00"));
 
         Circle circle = circleService.createCircle(creator.getId(), createRequest(4, false));
@@ -561,7 +640,7 @@ class CircleServiceIntegrationTest {
     @Test
     void circleCompletesWhenLastPositionIsVacatedByWithdrawal() {
         User creator = createFundedUser(new BigDecimal("500.00"));
-        User lastPositionMember = createFundedUser(new BigDecimal("100.00")); // enough for round 1 only
+        User lastPositionMember = createFundedUser(new BigDecimal("110.00")); // enough for round 1 only
 
         Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
         circleService.joinCircle(lastPositionMember.getId(), circle.getId()); // activates, creator (position 1) paid round 1
@@ -629,7 +708,7 @@ class CircleServiceIntegrationTest {
         // withdrawingUser: joins second in a past circle (never paid), then fails before their turn.
         // Never credited any LIEN, so it stays at zero too, isolating the comparison to the penalty.
         User pastCoMember2 = createFundedUser(new BigDecimal("500.00"));
-        User withdrawingUser = createFundedUser(new BigDecimal("100.00")); // enough for the join contribution only
+        User withdrawingUser = createFundedUser(new BigDecimal("110.00")); // enough for the join contribution only
         Circle pastCircleB = circleService.createCircle(pastCoMember2.getId(), createRequest(2, false));
         circleService.joinCircle(withdrawingUser.getId(), pastCircleB.getId());
 
@@ -660,16 +739,17 @@ class CircleServiceIntegrationTest {
         fundingService.postDeposit(richInLien.getId(), UserAccountType.LIEN, FundingType.STRIPE,
                 new BigDecimal("200.00"), UUID.randomUUID().toString());
         User other = createFundedUser(new BigDecimal("500.00"));
-        BigDecimal lienBefore = accountService.getUserAccount(richInLien.getId(), UserAccountType.LIEN)
-                .orElseThrow().getBalance();
 
         Circle circle = circleService.createCircle(richInLien.getId(), createRequest(2, false));
+        // captured after the join-time collateral hold has already landed, so this isolates the payout skim specifically
+        BigDecimal lienAfterJoin = accountService.getUserAccount(richInLien.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
         circleService.joinCircle(other.getId(), circle.getId()); // activates; richInLien outranks by LIEN, pays round 1
         assertThat(activeMembershipFor(circle.getId(), richInLien.getId()).getPosition()).isEqualTo(1);
 
-        BigDecimal lienAfter = accountService.getUserAccount(richInLien.getId(), UserAccountType.LIEN)
+        BigDecimal lienAfterPayout = accountService.getUserAccount(richInLien.getId(), UserAccountType.LIEN)
                 .orElseThrow().getBalance();
-        assertThat(lienAfter).isEqualByComparingTo(lienBefore); // banked LIEN already covers the loss, no skim
+        assertThat(lienAfterPayout).isEqualByComparingTo(lienAfterJoin); // banked LIEN already covers the loss, no skim
     }
 
     @Test
@@ -699,12 +779,17 @@ class CircleServiceIntegrationTest {
         User creator = createFundedUser(new BigDecimal("500.00"));
         User member2 = createFundedUser(new BigDecimal("500.00"));
         fundingService.postDeposit(member2.getId(), UserAccountType.LIEN, FundingType.STRIPE,
-                new BigDecimal("100.00"), UUID.randomUUID().toString()); // exactly at the floor once round 1 resolves and currentRound advances to 2
+                new BigDecimal("200.00"), UUID.randomUUID().toString()); // plenty of headroom above the floor
 
         Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
         circleService.joinCircle(member2.getId(), circle.getId()); // activates and locks the circle
 
-        assertThatThrownBy(() -> circleService.postLienWithdrawal(member2.getId(), new BigDecimal("1.00"),
+        BigDecimal lienBalance = accountService.getUserAccount(member2.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+        BigDecimal floor = circleService.computeLienWithdrawalFloor(member2.getId());
+        BigDecimal oneDollarTooMuch = lienBalance.subtract(floor).add(BigDecimal.ONE);
+
+        assertThatThrownBy(() -> circleService.postLienWithdrawal(member2.getId(), oneDollarTooMuch,
                 UUID.randomUUID().toString()))
                 .isInstanceOf(LienWithdrawalBlockedException.class);
     }
@@ -718,7 +803,10 @@ class CircleServiceIntegrationTest {
         Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false)); // needs 3 members, still FORMING
         assertThat(circle.getStatus()).isEqualTo(CircleStatus.FORMING);
 
-        circleService.postLienWithdrawal(creator.getId(), new BigDecimal("50.00"), UUID.randomUUID().toString());
+        // includes both the manual deposit above and the join-time collateral hold from createCircle's own join
+        BigDecimal lienBalance = accountService.getUserAccount(creator.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+        circleService.postLienWithdrawal(creator.getId(), lienBalance, UUID.randomUUID().toString());
 
         assertThat(accountService.getUserAccount(creator.getId(), UserAccountType.LIEN).orElseThrow().getBalance())
                 .isEqualByComparingTo(BigDecimal.ZERO);

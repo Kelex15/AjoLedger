@@ -68,8 +68,8 @@ class CircleRoundSchedulerIntegrationTest {
     }
 
     private Circle createOverdueActiveCircle() {
-        User creator = createFundedUser(new BigDecimal("100.00"));
-        User member2 = createFundedUser(new BigDecimal("100.00"));
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
 
         CircleCreateRequestDTO dto = CircleCreateRequestDTO.builder()
                 .name("Test Circle")

@@ -188,6 +188,8 @@ public class CircleService {
         CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
         postContribution(userId, circleId, pot.getId(), circle.getContributionAmount(),
                 circleId + ":" + userId + ":join");
+        BigDecimal collateral = roundAmount(resolveSizingPolicy(circle).calculateJoinCollateral(circle));
+        postLienHold(userId, collateral, circleId + ":" + userId + ":join-collateral");
         membership.setLastContributedRound(circle.getCurrentRound());
         circleMembershipRepository.save(membership);
 
