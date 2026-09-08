@@ -90,7 +90,6 @@ public class TransactionService {
                 };
             }
 
-            @SuppressWarnings("null")
             List<UUID> accountIds = legs.stream().map(Leg::accountId).toList();
             Map<UUID, LedgerDao.AccountBalance> balances = ledgerDao.lockAccounts(accountIds);
 
@@ -123,7 +122,6 @@ public class TransactionService {
                     .toList();
             ledgerDao.insertEntries(entries);
 
-            @SuppressWarnings("null")
             Map<UUID, BigDecimal> netChanges = legs.stream()
                     .collect(Collectors.toMap(Leg::accountId,
                             leg -> leg.creditAmount().subtract(leg.debitAmount()), BigDecimal::add));
