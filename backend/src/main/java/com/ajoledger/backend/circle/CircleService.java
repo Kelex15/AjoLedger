@@ -105,6 +105,7 @@ public class CircleService {
                 .status(CircleStatus.FORMING)
                 .sizingPolicyType(dto.sizingPolicyType())
                 .gated(dto.gated())
+                .minReputationScore(dto.minReputationScore())
                 .build());
 
         accountService.createCircleAccount(circle, CircleAccountType.POT);
@@ -183,8 +184,14 @@ public class CircleService {
             throw new CircleActionNotAllowedException("Already an active member of another circle");
         }
 
-        if (!resolveSizingPolicy(circle).canMemberJoin(circle, user)) {
+        if (!resolveSizingPolicy(circle).canAdmitMember(circle, user)) {
             throw new CircleActionNotAllowedException("Not eligible to join circle: " + circleId);
+        }
+
+        boolean isCreator = circle.getCreatedBy().getId().equals(userId);
+        if (circle.getMinReputationScore() != null && !isCreator
+                && computeReputationScore(circle, user) < circle.getMinReputationScore()) {
+            throw new CircleActionNotAllowedException("Reputation score below this circle's minimum: " + circleId);
         }
 
         CircleMembership membership = circleMembershipRepository.save(CircleMembership.builder()

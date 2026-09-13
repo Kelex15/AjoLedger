@@ -310,6 +310,43 @@ class CircleServiceIntegrationTest {
     }
 
     @Test
+    void minReputationScoreExemptsCreatorsOwnAutoJoin() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        CircleCreateRequestDTO request = createRequest(3, false).toBuilder().minReputationScore(0.99).build();
+
+        Circle circle = circleService.createCircle(creator.getId(), request);
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(
+                circle.getId(), creator.getId(), MembershipStatus.ACTIVE)).isPresent();
+    }
+
+    @Test
+    void minReputationScoreBlocksLowScoringNonCreatorCandidate() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User candidate = createFundedUser(new BigDecimal("110.00"));
+        CircleCreateRequestDTO request = createRequest(3, false).toBuilder().minReputationScore(0.99).build();
+        Circle circle = circleService.createCircle(creator.getId(), request);
+
+        assertThatThrownBy(() -> circleService.joinCircle(candidate.getId(), circle.getId()))
+                .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    @Test
+    void minReputationScoreAllowsQualifyingCandidate() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User candidate = createFundedUser(new BigDecimal("110.00"));
+        // A brand-new candidate with no history and no LIEN scores exactly 0.25 pre-join
+        // (0.5 success rate via smoothing, 0 lien coverage) - set just below that.
+        CircleCreateRequestDTO request = createRequest(3, false).toBuilder().minReputationScore(0.2).build();
+        Circle circle = circleService.createCircle(creator.getId(), request);
+
+        circleService.joinCircle(candidate.getId(), circle.getId());
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(
+                circle.getId(), candidate.getId(), MembershipStatus.ACTIVE)).isPresent();
+    }
+
+    @Test
     void gatedCircleDiscountsPotentialGroupLoss() {
         User openCreator = createFundedUser(new BigDecimal("110.00"));
         User openMember2 = createFundedUser(new BigDecimal("110.00"));

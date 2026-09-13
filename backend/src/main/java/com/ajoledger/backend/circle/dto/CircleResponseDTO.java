@@ -16,6 +16,7 @@ public record CircleResponseDTO(
     int currentRound,
     String status,
     boolean gated,
+    Double minReputationScore,
     Instant createdAt
 ) {
 
@@ -30,6 +31,7 @@ public record CircleResponseDTO(
                 circle.getCurrentRound(),
                 circle.getStatus().name(),
                 circle.isGated(),
+                circle.getMinReputationScore(),
                 circle.getCreatedAt());
     }
 }

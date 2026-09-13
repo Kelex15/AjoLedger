@@ -4,6 +4,8 @@ import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.system.Constants;
 
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -40,7 +42,11 @@ public record CircleCreateRequestDTO(
     @NotNull(message = "Contribution amount is required")
     @Positive(message = "Contribution amount must be positive") BigDecimal contributionAmount,
 
-    boolean gated
+    boolean gated,
+
+    /** 0.0-1.0. Leave unset for no minimum. Doesn't apply to the creator's own auto-join. */
+    @DecimalMin(value = "0.0", message = "Min reputation score must be at least 0.0")
+    @DecimalMax(value = "1.0", message = "Min reputation score must be at most 1.0") Double minReputationScore
 ) {
 
     @AssertTrue(message = "Enrollment deadline is required for OPEN_ENROLLMENT circles")

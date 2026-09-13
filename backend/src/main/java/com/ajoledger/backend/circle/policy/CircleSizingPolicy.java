@@ -26,7 +26,7 @@ public abstract class CircleSizingPolicy {
         this.circleMembershipRepository = circleMembershipRepository;
     }
 
-    public boolean canMemberJoin(Circle circle, User candidate) {
+    public boolean canAdmitMember(Circle circle, User candidate) {
         if (circle.getStatus() != CircleStatus.FORMING || !hasEnrollmentRoom(circle)) {
             return false;
         }

@@ -101,6 +101,11 @@ public class Circle {
     @Column(nullable = false, updatable = false)
     private boolean gated;
 
+    /** Null means no floor: anyone otherwise eligible can join. Doesn't apply to the creator's own
+     * auto-join, since circle creation itself has no reputation requirement of its own. */
+    @Column(name = "min_reputation_score", updatable = false)
+    private Double minReputationScore;
+
     @JsonIgnore
     @OneToMany(mappedBy = "circle")
     private List<CircleMembership> memberships;
