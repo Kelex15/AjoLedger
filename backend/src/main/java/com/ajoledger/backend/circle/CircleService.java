@@ -34,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -63,6 +64,7 @@ public class CircleService {
     private static final long REPUTATION_SMOOTHING_PRIOR = 1; // Laplace smoothing prior.
 
     private final LedgerService ledgerService;
+    private final TransactionTemplate transactionTemplate;
     private final UserAccountRepository userAccountRepository;
     private final CircleRepository circleRepository;
     private final CircleAccountRepository circleAccountRepository;
@@ -481,18 +483,27 @@ public class CircleService {
         Circle circle = circleRepository.findById(circleId)
                 .orElseThrow(() -> new IllegalStateException("Circle not found: " + circleId));
         CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
-        List<CircleMembership> unpaid = unpaidActiveMemberships(circle);
+        List<UUID> unpaidMembershipIds = unpaidActiveMemberships(circle).stream().map(CircleMembership::getId).toList();
 
-        for (CircleMembership membership : unpaid) {
+        for (UUID membershipId : unpaidMembershipIds) {
+            sweepContribution(circle, pot.getId(), membershipId);
+        }
+    }
+
+    /** Per membership, not per loop, so a contribution succeeding but the status update failing can't leave someone incorrectly treated as unpaid. */
+    private void sweepContribution(Circle circle, UUID potAccountId, UUID membershipId) {
+        transactionTemplate.execute(status -> {
+            CircleMembership membership = circleMembershipRepository.findById(membershipId).orElseThrow();
             try {
-                postContribution(membership.getUser().getId(), circleId, pot.getId(), circle.getContributionAmount(),
-                        circleId + ":" + membership.getId() + ":round-" + circle.getCurrentRound());
+                postContribution(membership.getUser().getId(), circle.getId(), potAccountId, circle.getContributionAmount(),
+                        circle.getId() + ":" + membership.getId() + ":round-" + circle.getCurrentRound());
                 membership.setLastContributedRound(circle.getCurrentRound());
                 circleMembershipRepository.save(membership);
             } catch (InsufficientBalanceException e) {
                 // left unpaid. markNonPayers handles it next.
             }
-        }
+            return null;
+        });
     }
 
     private void markNonPayers(UUID circleId) {
@@ -502,11 +513,18 @@ public class CircleService {
         List<UUID> unpaidMembershipIds = unpaidActiveMemberships(circle).stream().map(CircleMembership::getId).toList();
 
         for (UUID membershipId : unpaidMembershipIds) {
+            processNonPayer(circle, reserve.getId(), membershipId);
+        }
+    }
+
+    /** Per membership, not per loop, so one failure can't roll back another's already-successful processing. */
+    private void processNonPayer(Circle circle, UUID reserveAccountId, UUID membershipId) {
+        transactionTemplate.execute(status -> {
             // Re-fetched since an earlier withdrawal in this same loop may have shifted this
             // membership's position.
             CircleMembership membership = circleMembershipRepository.findById(membershipId).orElseThrow();
             User user = membership.getUser();
-            boolean alreadyPaidOut = circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circleId, user.getId());
+            boolean alreadyPaidOut = circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circle.getId(), user.getId());
 
             if (alreadyPaidOut) {
                 int position = membership.getPosition() != null ? membership.getPosition() : 0;
@@ -515,8 +533,8 @@ public class CircleService {
                 // Waterfall runs first, membership only flips to DEFAULTED once funds are actually
                 // seized. If this throws, the membership stays ACTIVE so the next scheduler pass
                 // retries instead of leaving a defaulted membership with nothing recovered.
-                postDefaultWaterfall(user.getId(), membership.getId(), reserve.getId(), groupLoss,
-                        circleId + ":" + membership.getId() + ":default-round-" + circle.getCurrentRound());
+                postDefaultWaterfall(user.getId(), membership.getId(), reserveAccountId, groupLoss,
+                        circle.getId() + ":" + membership.getId() + ":default-round-" + circle.getCurrentRound());
 
                 membership.setStatus(MembershipStatus.DEFAULTED);
                 circleMembershipRepository.save(membership);
@@ -527,7 +545,8 @@ public class CircleService {
                 circleMembershipRepository.save(membership);
                 compactPositionsAfterWithdrawal(circle, withdrawnPosition);
             }
-        }
+            return null;
+        });
     }
 
     /** Defaulter gets their own message; every other active member (excludes the defaulter,
@@ -569,6 +588,23 @@ public class CircleService {
 
         CircleMembership recipientMembership = getCurrentPayoutReceiver(circle);
         if (recipientMembership != null) {
+            resolvePayoutRound(circle, recipientMembership);
+        }
+
+        // Checked regardless of whether this call paid anyone: a withdrawal can vacate the
+        // circle's last remaining position with nobody left to shift into it, so a round with
+        // no recipient still needs to be recognized as "everyone left is already paid."
+        boolean everyonePaid = activeMembers.stream()
+                .allMatch(m -> circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circleId, m.getUser().getId()));
+        if (everyonePaid) {
+            completeCircle(circle, resolveSizingPolicy(circle).getTotalRounds(circle));
+        }
+    }
+
+    /** One atomic unit: the reserve release, the payout, and advancing the round all belong to this one payout event. */
+    private void resolvePayoutRound(Circle circle, CircleMembership recipientMembership) {
+        transactionTemplate.execute(status -> {
+            UUID circleId = circle.getId();
             User recipient = recipientMembership.getUser();
             releaseReserveShare(circle);
             CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
@@ -590,26 +626,22 @@ public class CircleService {
             circle.setCurrentRound(circle.getCurrentRound() + 1);
             circle.setLastRoundAt(Instant.now());
             circleRepository.save(circle);
-        }
-
-        // Checked regardless of whether this call paid anyone: a withdrawal can vacate the
-        // circle's last remaining position with nobody left to shift into it, so a round with
-        // no recipient still needs to be recognized as "everyone left is already paid."
-        boolean everyonePaid = activeMembers.stream()
-                .allMatch(m -> circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circleId, m.getUser().getId()));
-        if (everyonePaid) {
-            completeCircle(circle, resolveSizingPolicy(circle).getTotalRounds(circle));
-        }
+            return null;
+        });
     }
 
+    /** One atomic unit: the circle and every remaining member finish together, or not at all. */
     private void completeCircle(Circle circle, int totalRounds) {
-        circle.setStatus(CircleStatus.COMPLETED);
-        circle.setCurrentRound(totalRounds);
-        circleRepository.save(circle);
-        for (CircleMembership membership : circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE)) {
-            membership.setStatus(MembershipStatus.COMPLETED);
-            circleMembershipRepository.save(membership);
-        }
+        transactionTemplate.execute(status -> {
+            circle.setStatus(CircleStatus.COMPLETED);
+            circle.setCurrentRound(totalRounds);
+            circleRepository.save(circle);
+            for (CircleMembership membership : circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE)) {
+                membership.setStatus(MembershipStatus.COMPLETED);
+                circleMembershipRepository.save(membership);
+            }
+            return null;
+        });
     }
 
     /** Spreads the reserve's current balance evenly across the rounds still ahead, rather than
