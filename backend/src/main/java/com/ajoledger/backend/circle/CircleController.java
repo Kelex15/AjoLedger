@@ -7,6 +7,7 @@ import com.ajoledger.backend.account.exception.AccountNotFoundException;
 import com.ajoledger.backend.circle.dto.CircleCreateRequestDTO;
 import com.ajoledger.backend.circle.dto.CircleInviteCreateRequestDTO;
 import com.ajoledger.backend.circle.dto.CircleInviteResponseDTO;
+import com.ajoledger.backend.circle.dto.CircleMemberResponseDTO;
 import com.ajoledger.backend.circle.dto.CircleMembershipResponseDTO;
 import com.ajoledger.backend.circle.dto.CircleResponseDTO;
 import com.ajoledger.backend.circle.dto.LienAmountRequestDTO;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -74,6 +76,22 @@ public class CircleController {
                                                       @PathVariable UUID circleId) {
         Circle circle = circleService.cancelCircle(circleId, currentUserId);
         return ResponseEntity.ok(CircleResponseDTO.fromCircle(circle));
+    }
+
+    @GetMapping(path = "/{circleId}/members", version = "1")
+    public ResponseEntity<List<CircleMemberResponseDTO>> members(@PathVariable UUID circleId) {
+        List<CircleMemberResponseDTO> members = circleService.getMemberStandings(circleId).stream()
+                .map(CircleMemberResponseDTO::of)
+                .toList();
+        return ResponseEntity.ok(members);
+    }
+
+    @PostMapping(path = "/{circleId}/members/{memberUserId}/remove", version = "1")
+    public ResponseEntity<CircleMembershipResponseDTO> removeMember(@AuthenticationPrincipal UUID currentUserId,
+                                                                       @PathVariable UUID circleId,
+                                                                       @PathVariable UUID memberUserId) {
+        CircleMembership membership = circleService.removeMember(circleId, currentUserId, memberUserId);
+        return ResponseEntity.ok(CircleMembershipResponseDTO.fromMembership(membership));
     }
 
     @GetMapping(path = "/lien", version = "1")

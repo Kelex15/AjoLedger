@@ -5,5 +5,6 @@ public enum MembershipStatus {
     WITHDRAWN,  // exit before receiving payout. Forfeits standing, no waterfall.
     DEFAULTED,  // stopped contributing after receiving payout. Triggers the default waterfall.
     DISSOLVED,  // the circle failed to form or was cancelled. Not the member's doing, refunded in full.
-    COMPLETED   // every round paid out successfully.
+    COMPLETED,  // every round paid out successfully.
+    REMOVED     // the creator removed them before lock. Not their own doing, refunded in full.
 }

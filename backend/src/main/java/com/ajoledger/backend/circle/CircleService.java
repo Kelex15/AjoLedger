@@ -216,17 +216,9 @@ public class CircleService {
                 .findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE);
         circle.setLockedMemberCount(members.size());
 
-        // Scored once per member up front, not inside the comparator, since a sort can invoke
-        // the comparator far more than once per element.
-        Map<UUID, Double> scoresByMembershipId = members.stream()
-                .collect(Collectors.toMap(CircleMembership::getId, m -> computeReputationScore(circle, m.getUser())));
-        members.sort(Comparator
-                .<CircleMembership, Double>comparing(m -> scoresByMembershipId.get(m.getId()))
-                .reversed()
-                .thenComparing(CircleMembership::getJoinedAt));
-        for (int i = 0; i < members.size(); i++) {
-            members.get(i).setPosition(i + 1);
-            circleMembershipRepository.save(members.get(i));
+        for (CircleMemberStanding standing : rankByReputation(circle, members)) {
+            standing.membership().setPosition(standing.payoutPosition());
+            circleMembershipRepository.save(standing.membership());
         }
 
         circle.setStatus(CircleStatus.ACTIVE);
@@ -234,9 +226,36 @@ public class CircleService {
         resolveRoundIfComplete(circle.getId());
     }
 
+    /** Live preview: recomputed fresh each call against whoever's currently active, so it shifts
+     * both pre-lock (as members join) and post-lock (as reputation keeps evolving after the real
+     * position froze) — can diverge from the membership's own stored position either way. */
+    public List<CircleMemberStanding> getMemberStandings(UUID circleId) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
+        List<CircleMembership> members = circleMembershipRepository
+                .findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE);
+        return rankByReputation(circle, members);
+    }
+
+    private List<CircleMemberStanding> rankByReputation(Circle circle, List<CircleMembership> members) {
+        Map<UUID, Double> scoresByMembershipId = members.stream()
+                .collect(Collectors.toMap(CircleMembership::getId, m -> computeReputationScore(circle, m.getUser())));
+        members.sort(Comparator
+                .<CircleMembership, Double>comparing(m -> scoresByMembershipId.get(m.getId()))
+                .reversed()
+                .thenComparing(CircleMembership::getJoinedAt));
+
+        List<CircleMemberStanding> standings = new ArrayList<>();
+        for (int i = 0; i < members.size(); i++) {
+            CircleMembership member = members.get(i);
+            standings.add(new CircleMemberStanding(member, scoresByMembershipId.get(member.getId()), i + 1));
+        }
+        return standings;
+    }
+
     /** Blends a lifetime behavioral track record with how much of this circle's worst-case
      * exposure the member's own LIEN already covers. Higher score gets an earlier position. */
-    private double computeReputationScore(Circle circle, User user) {
+    public double computeReputationScore(Circle circle, User user) {
         long successes = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.COMPLETED);
         long withdrawals = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.WITHDRAWN);
         long defaults = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.DEFAULTED);
@@ -245,8 +264,12 @@ public class CircleService {
 
         UserAccount lienAccount = userAccountRepository.requireByUserIdAndType(user.getId(), UserAccountType.LIEN);
         double lienBalance = ledgerDao.getBalance(lienAccount.getId()).doubleValue();
-        double worstCaseExposure = circle.getContributionAmount().doubleValue()
-                * (resolveSizingPolicy(circle).getTotalRounds(circle) - 1);
+        // Locked circles use the real round count; a still-FORMING circle has no lockedMemberCount
+        // yet, so maxMembers is the best available pre-lock estimate.
+        int totalRounds = circle.getLockedMemberCount() != null
+                ? resolveSizingPolicy(circle).getTotalRounds(circle)
+                : circle.getMaxMembers();
+        double worstCaseExposure = circle.getContributionAmount().doubleValue() * (totalRounds - 1);
         double lienCoverageRatio = TrustCalculations.calculateLienCoverageRatio(lienBalance, worstCaseExposure);
 
         return TrustCalculations.calculateReputationScore(successRate, lienCoverageRatio, REPUTATION_LIEN_WEIGHT);
@@ -436,6 +459,38 @@ public class CircleService {
         }
         dissolveCircle(circle);
         return circle;
+    }
+
+    public List<CircleMembership> getActiveMembers(UUID circleId) {
+        if (!circleRepository.existsById(circleId)) {
+            throw new CircleNotFoundException("Circle not found: " + circleId);
+        }
+        return circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE);
+    }
+
+    /** Creator-initiated removal of a not-yet-locked member, e.g. after seeing a low reputation score. */
+    @Transactional
+    public CircleMembership removeMember(UUID circleId, UUID requestingUserId, UUID memberUserId) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
+        if (!circle.getCreatedBy().getId().equals(requestingUserId)) {
+            throw new CircleCreatorRequiredException("Only the circle's creator can remove a member");
+        }
+        if (circle.getStatus() != CircleStatus.FORMING) {
+            throw new CircleActionNotAllowedException("Members can only be removed while the circle is still forming: " + circleId);
+        }
+        if (memberUserId.equals(requestingUserId)) {
+            throw new CircleActionNotAllowedException("The creator cannot remove themselves; cancel the circle instead");
+        }
+        CircleMembership membership = circleMembershipRepository
+                .findByCircle_IdAndUser_IdAndStatus(circleId, memberUserId, MembershipStatus.ACTIVE)
+                .orElseThrow(() -> new CircleActionNotAllowedException("User is not an active member of this circle: " + memberUserId));
+
+        CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
+        postContributionRefund(memberUserId, circleId, pot.getId(), circle.getContributionAmount(),
+                circleId + ":" + memberUserId + ":remove-refund");
+        membership.setStatus(MembershipStatus.REMOVED);
+        return circleMembershipRepository.save(membership);
     }
 
     // ---- scheduler interface: a scheduled job fetches due circles, then processes each one ----

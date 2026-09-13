@@ -10,4 +10,5 @@ public interface CircleMembershipRepository extends JpaRepository<CircleMembersh
     List<CircleMembership> findByCircle_IdAndStatus(UUID circleId, MembershipStatus status);
     long countByUser_IdAndStatus(UUID userId, MembershipStatus status);
     Optional<CircleMembership> findByUser_IdAndStatus(UUID userId, MembershipStatus status);
+    Optional<CircleMembership> findByCircle_IdAndUser_IdAndStatus(UUID circleId, UUID userId, MembershipStatus status);
 }
