@@ -1,4 +1,4 @@
-package com.ajoledger.backend.transaction.dto;
+package com.ajoledger.backend.ledger.dto;
 
 import com.ajoledger.backend.account.UserAccountType;
 

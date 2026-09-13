@@ -13,7 +13,6 @@ Plain-language explanations of the genuinely complex parts of the system, so I c
 4. Logout revokes the single presented token directly, without touching the rest of the family — a normal end to one session, not a compromise signal.
 **Key files:** `backend/src/main/java/com/ajoledger/backend/auth/RefreshTokenService.java`, `RefreshToken.java`, `AuthService.refresh()`.
 **You should know:** Why rotation *plus* reuse detection, not just rotation alone — and the `@Transactional`/`noRollbackFor` subtlety documented in the Challenges log, since the revocation-on-reuse step is exactly the kind of side effect that's easy to accidentally roll back.
-**In my own words:**
 
 ## Google OAuth account linking
 
@@ -27,20 +26,19 @@ Plain-language explanations of the genuinely complex parts of the system, so I c
 5. First successful Google login for that account stores the Google subject ID (`googleId`) on `UserAuth`; later logins just confirm it still matches.
 **Key files:** `backend/src/main/java/com/ajoledger/backend/auth/GoogleTokenVerifierService.java`, `AuthService.loginWithGoogle()`.
 **You should know:** Why not just match on email — the `email_verified` check specifically is the whole security property; without it, the account-linking logic would be exploitable.
-**In my own words:**
 
 ## Double-entry ledger: transactions, legs, and the write path
 
-**What it does (one sentence):** Every money movement is recorded as one `transaction` header row plus two or more `ledger_entry` "leg" rows — one leg per account touched, debited or credited by a specific amount — written together so the books can never go unbalanced.
+**What it does (one sentence):** Every money movement is recorded as one `transaction` header row plus exactly two `ledger_entry` "leg" rows — one leg per account touched, debited or credited by a specific amount — written together so the books can never go unbalanced.
 **Why it exists:** ADR-0004 requires the ledger to be auditable at the database level, not an emergent property of application code behaving correctly. Standard double-entry accounting's answer to "prove the books always balance" is: break every event into legs, and require the sum of debits to always equal the sum of credits for that event. "Leg" is the term for one of those pieces — one account, one direction (debit or credit), one amount.
 **How it works, step by step:**
-1. A business event (a transfer, a contribution, a payout) is broken into a list of legs before anything is written — e.g. a plain transfer is 2 legs (debit source, credit destination), a `PAYOUT` is 3 legs (debit the circle's pot, credit the recipient's `SAVINGS`, credit their `LIEN`).
-2. `TransactionService`'s shared helper (`postLedgerTransaction`) locks every account those legs touch (`SELECT ... FOR UPDATE`, deterministic order to avoid deadlocks), checks that every debit leg's account actually has enough balance, and only then writes the `transaction` header row and all the `ledger_entry` leg rows together, and finally adjusts each account's cached balance by its net change.
-3. A deferred Postgres trigger checks, at commit time, that every transaction's legs sum to zero and that there are at least two of them — the database itself refuses an unbalanced write, it isn't just trusted application logic.
-4. Every write also carries an idempotency key so a retried request can't double-process.
-**Key files:** `backend/src/main/java/com/ajoledger/backend/transaction/TransactionService.java` (the `Leg` record and `postLedgerTransaction` helper), `LedgerDao.java`, `db/migration/V3__create_ledger_tables.sql` (the balance-check trigger).
-**You should know:** Why "leg" specifically, rather than treating debits and credits as separate standalone concepts — it's the unit a transaction is built out of, and the balancing invariant is defined in terms of legs summing to zero *within one transaction*, not in terms of any single leg being correct on its own.
-**In my own words:**
+1. A business event is broken into legs before anything is written — always exactly 2 (debit one account, credit the other). A compound event that touches more than two accounts (a payout: pot, recipient `SAVINGS`, `SYSTEM_BUFFER`, and sometimes recipient `LIEN`) isn't one bigger transaction — it's several 2-leg transactions, one per pair, grouped under one `LedgerOperation` header row (`operation_type`, `reference_id`) so they're queryable together (`WHERE operation_id = ?`) without needing more than 2 legs on any single transaction.
+2. `LedgerService.postLedgerOperation` inserts the `LedgerOperation` row and hands its id into a callback, all inside one `TransactionTemplate.execute(...)` boundary; the callback then calls `postLedgerTransaction` once per 2-leg sub-event, tagging each with that operation id. Nested `TransactionTemplate.execute` calls join the same physical transaction (default `REQUIRED` propagation), so every sub-transaction commits or rolls back together with no `@Transactional` annotation needed anywhere.
+3. `LedgerService.postLedgerTransaction` locks every account a given pair of legs touches (`SELECT ... FOR UPDATE`, deterministic order to avoid deadlocks), checks the debit leg's account actually has enough balance, and only then writes the `transaction` header row and its 2 `ledger_entry` rows together, adjusting each account's cached balance by its net change.
+4. A deferred Postgres trigger checks, at commit time, that every transaction's legs sum to zero and that there are at least two of them — the database itself refuses an unbalanced write, it isn't just trusted application logic.
+5. Every write also carries an idempotency key so a retried request can't double-process.
+**Key files:** `backend/src/main/java/com/ajoledger/backend/ledger/LedgerService.java` (the `postLedgerOperation`/`postLedgerTransaction` helpers), `Leg.java`, `LedgerOperation.java`, `LedgerDao.java`, `db/migration/V3__create_ledger_tables.sql` (the balance-check trigger), `V16__add_ledger_operation_and_widen_transaction_type.sql` (the operation-grouping table).
+**You should know:** Why "leg" specifically, rather than treating debits and credits as separate standalone concepts — it's the unit a transaction is built out of, and the balancing invariant is defined in terms of legs summing to zero *within one transaction*, not in terms of any single leg being correct on its own. Also why a compound event is several linked 2-leg transactions rather than one N-leg transaction: it keeps "from account"/"to account" unambiguous for every transaction, no per-event-type special-casing needed to read one back.
 
 ## Circle reserve account and gradual default recovery
 
@@ -53,7 +51,6 @@ Plain-language explanations of the genuinely complex parts of the system, so I c
 4. Because the release is recalculated from the reserve's live balance every round rather than following a schedule fixed at default time, a second default before the first has fully released simply folds into the same ongoing release, and the circle's last round always empties the reserve exactly (dividing by 1 leaves nothing behind).
 **Key files:** `backend/src/main/java/com/ajoledger/backend/circle/CircleService.java` (`postDefaultWaterfall`, `releaseReserveShare`, `resolveRoundIfComplete`), `account/entity/CircleAccount.java`, `account/CircleAccountType.java`.
 **You should know:** Why the reserve is per-circle rather than folded into the shared platform-wide buffer — the buffer absorbs losses the lien can't cover at all, while the reserve only ever holds money that's already been recovered on one specific circle's behalf, so it has to stay scoped to that circle to be released back into that circle's own rounds.
-**In my own words:**
 
 ## Reputation-based payout position assignment
 
@@ -65,4 +62,3 @@ Plain-language explanations of the genuinely complex parts of the system, so I c
 3. Members are sorted by score descending, tiebroken by `joinedAt`, and positions 1..N are assigned in that order.
 **Key files:** `backend/src/main/java/com/ajoledger/backend/circle/CircleService.java` (`activateCircle`, `computeReputationScore`), `CircleMembershipRepository.countByUser_IdAndStatus`.
 **You should know:** Why the score is computed live from `CircleMembership` rows instead of a running counter on `User` — same reasoning as balances being aggregated from the ledger rather than cached: a live count can't drift out of sync with the rows it's supposed to summarize.
-**In my own words:**

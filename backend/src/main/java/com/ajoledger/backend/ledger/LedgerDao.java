@@ -76,6 +76,18 @@ public class LedgerDao {
         return jdbcTemplate.queryForObject(sql, BigDecimal.class, accountId);
     }
 
+    public List<LedgerEntry> findLegsByTransactionId(UUID transactionId) {
+        String sql = "SELECT * FROM ledger_entry WHERE transaction_id = ?";
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new LedgerEntry(
+                UUID.fromString(rs.getString("id")),
+                UUID.fromString(rs.getString("account_id")),
+                rs.getBigDecimal("debit_amount"),
+                rs.getBigDecimal("credit_amount"),
+                UUID.fromString(rs.getString("transaction_id")),
+                rs.getTimestamp("created_at").toInstant()
+        ), transactionId);
+    }
+
     public boolean transactionInvolvesUser(UUID transactionId, UUID userId) {
         String sql = """
             SELECT EXISTS (

@@ -45,8 +45,8 @@ public class CirclePayout {
     @Column(name = "round_number", nullable = false, updatable = false)
     private int roundNumber;
 
-    @Column(name = "transaction_id")
-    private UUID transactionId; // null until paid. Not a JPA relation, Transaction isn't a JPA entity.
+    @Column(name = "operation_id")
+    private UUID operationId; // null until paid. Not a JPA relation, LedgerOperation isn't a JPA entity.
 
     @Column(name = "paid_at", nullable = false, updatable = false)
     private Instant paidAt;

@@ -1,4 +1,4 @@
-package com.ajoledger.backend.transaction;
+package com.ajoledger.backend.ledger;
 
 import java.math.BigDecimal;
 import java.util.UUID;

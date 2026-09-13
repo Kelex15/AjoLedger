@@ -24,8 +24,8 @@ import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
 import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
 import com.ajoledger.backend.circle.exception.InviteNotFoundException;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
-import com.ajoledger.backend.transaction.exception.IdempotencyKeyConflictException;
-import com.ajoledger.backend.transaction.exception.LienWithdrawalBlockedException;
+import com.ajoledger.backend.ledger.exception.IdempotencyKeyConflictException;
+import com.ajoledger.backend.ledger.exception.LienWithdrawalBlockedException;
 import com.ajoledger.backend.user.exception.UserNotFoundException;
 
 @RestControllerAdvice

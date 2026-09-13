@@ -1,14 +1,15 @@
-package com.ajoledger.backend.transaction;
+package com.ajoledger.backend.ledger;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
-public record Transaction(
+public record LedgerTransaction(
     UUID id,
     BigDecimal amount,
     String description,
-    TransactionType transactionType,
+    LedgerTransactionType transactionType,
+    UUID operationId,
     Instant createdAt
 ) {
 

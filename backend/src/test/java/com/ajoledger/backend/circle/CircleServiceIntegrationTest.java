@@ -33,7 +33,7 @@ import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.system.Constants;
-import com.ajoledger.backend.transaction.exception.LienWithdrawalBlockedException;
+import com.ajoledger.backend.ledger.exception.LienWithdrawalBlockedException;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
 
@@ -131,6 +131,32 @@ class CircleServiceIntegrationTest {
         assertThat(circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circle.getId(), creator.getId())).isTrue();
         assertThat(accountService.getCircleAccount(circle.getId(), CircleAccountType.RESERVE).orElseThrow().getBalance())
                 .isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void payoutSplitsIntoLinkedTransactionsEachWithExactlyTwoLegs() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(member2.getId(), circle.getId());
+
+        UUID operationId = jdbcTemplate.queryForObject(
+                "SELECT operation_id FROM circle_payout WHERE circle_id = ? AND recipient_user_id = ?",
+                UUID.class, circle.getId(), creator.getId());
+        assertThat(operationId).isNotNull();
+
+        List<UUID> transactionIds = jdbcTemplate.queryForList(
+                "SELECT id FROM transaction WHERE operation_id = ?", UUID.class, operationId);
+        // main payout + buffer fee + lien skim - the recipient's own join collateral doesn't fully
+        // cover this position's group loss, so all three sub-transactions post.
+        assertThat(transactionIds).hasSize(3);
+
+        for (UUID transactionId : transactionIds) {
+            Integer legCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM ledger_entry WHERE transaction_id = ?", Integer.class, transactionId);
+            assertThat(legCount).isEqualTo(2);
+        }
     }
 
     @Test

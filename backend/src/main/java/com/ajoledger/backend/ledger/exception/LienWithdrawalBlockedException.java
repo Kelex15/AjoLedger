@@ -1,4 +1,4 @@
-package com.ajoledger.backend.transaction.exception;
+package com.ajoledger.backend.ledger.exception;
 
 public class LienWithdrawalBlockedException extends RuntimeException {
     public LienWithdrawalBlockedException(String message) {

@@ -1,12 +1,14 @@
-package com.ajoledger.backend.transaction;
+package com.ajoledger.backend.ledger;
 
-public enum TransactionType {
+public enum LedgerTransactionType {
     DEPOSIT,
     WITHDRAWAL,
     TRANSFER,
     CONTRIBUTION,
     CONTRIBUTION_REFUND,
     PAYOUT,
+    PAYOUT_BUFFER_FEE,
+    PAYOUT_LIEN_SKIM,
     LIEN_HOLD,
     LIEN_WITHDRAWAL,
     LIEN_SEIZURE,

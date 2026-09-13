@@ -1,4 +1,4 @@
-package com.ajoledger.backend.transaction;
+package com.ajoledger.backend.ledger;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,9 +28,8 @@ import com.ajoledger.backend.account.entity.UserAccount;
 import com.ajoledger.backend.account.repository.AccountRepository;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
-import com.ajoledger.backend.ledger.LedgerDao;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
-import com.ajoledger.backend.transaction.exception.IdempotencyKeyConflictException;
+import com.ajoledger.backend.ledger.exception.IdempotencyKeyConflictException;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
 
@@ -46,7 +45,7 @@ class LedgerIntegrationTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
 
     @Autowired
-    private TransactionService transactionService;
+    private LedgerService ledgerService;
     @Autowired
     private FundingService fundingService;
     @Autowired
@@ -94,27 +93,27 @@ class LedgerIntegrationTest {
         UserAccount recipientSavings = accountService.createUserAccount(recipient, UserAccountType.SAVINGS);
 
         // Two concurrent transfers of the full balance - only one should succeed.
-        Callable<Transaction> attempt = () -> transactionService.postTransfer(
+        Callable<LedgerTransaction> attempt = () -> ledgerService.postTransfer(
                 payer.getId(), UserAccountType.SAVINGS, recipient.getId(), UserAccountType.SAVINGS,
                 new BigDecimal("100.00"), UUID.randomUUID().toString());
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch go = new CountDownLatch(1);
-        Callable<Transaction> synchronizedAttempt = () -> {
+        Callable<LedgerTransaction> synchronizedAttempt = () -> {
             ready.countDown();
             go.await();
             return attempt.call();
         };
 
-        Future<Transaction> f1 = executor.submit(synchronizedAttempt);
-        Future<Transaction> f2 = executor.submit(synchronizedAttempt);
+        Future<LedgerTransaction> f1 = executor.submit(synchronizedAttempt);
+        Future<LedgerTransaction> f2 = executor.submit(synchronizedAttempt);
         ready.await();
         go.countDown();
 
         int succeeded = 0;
         int failed = 0;
-        for (Future<Transaction> f : List.of(f1, f2)) {
+        for (Future<LedgerTransaction> f : List.of(f1, f2)) {
             try {
                 f.get();
                 succeeded++;
@@ -139,9 +138,9 @@ class LedgerIntegrationTest {
         UserAccount recipientSavings = accountService.createUserAccount(recipient, UserAccountType.SAVINGS);
         String idempotencyKey = UUID.randomUUID().toString();
 
-        Transaction first = transactionService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
+        LedgerTransaction first = ledgerService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
                 recipient.getId(), UserAccountType.SAVINGS, new BigDecimal("30.00"), idempotencyKey);
-        Transaction second = transactionService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
+        LedgerTransaction second = ledgerService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
                 recipient.getId(), UserAccountType.SAVINGS, new BigDecimal("30.00"), idempotencyKey);
 
         assertThat(second.id()).isEqualTo(first.id());
@@ -158,12 +157,31 @@ class LedgerIntegrationTest {
         accountService.createUserAccount(recipient, UserAccountType.SAVINGS);
         String idempotencyKey = UUID.randomUUID().toString();
 
-        transactionService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
+        ledgerService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
                 recipient.getId(), UserAccountType.SAVINGS, new BigDecimal("10.00"), idempotencyKey);
 
-        assertThatThrownBy(() -> transactionService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
+        assertThatThrownBy(() -> ledgerService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
                 recipient.getId(), UserAccountType.SAVINGS, new BigDecimal("20.00"), idempotencyKey))
                 .isInstanceOf(IdempotencyKeyConflictException.class);
+    }
+
+    @Test
+    void transferLegsResolveToTheCorrectFromAndToAccounts() {
+        User payer = createUser();
+        User recipient = createUser();
+        UserAccount payerSavings = createFundedAccount(payer, UserAccountType.SAVINGS, new BigDecimal("50.00"));
+        UserAccount recipientSavings = accountService.createUserAccount(recipient, UserAccountType.SAVINGS);
+
+        LedgerTransaction transaction = ledgerService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
+                recipient.getId(), UserAccountType.SAVINGS, new BigDecimal("10.00"), UUID.randomUUID().toString());
+
+        List<LedgerEntry> legs = ledgerDao.findLegsByTransactionId(transaction.id());
+        assertThat(legs).hasSize(2);
+
+        LedgerEntry debitLeg = legs.stream().filter(leg -> leg.debitAmount().signum() > 0).findFirst().orElseThrow();
+        LedgerEntry creditLeg = legs.stream().filter(leg -> leg.creditAmount().signum() > 0).findFirst().orElseThrow();
+        assertThat(debitLeg.accountId()).isEqualTo(payerSavings.getId());
+        assertThat(creditLeg.accountId()).isEqualTo(recipientSavings.getId());
     }
 
     @Test
@@ -174,7 +192,7 @@ class LedgerIntegrationTest {
         accountService.createUserAccount(recipient, UserAccountType.SAVINGS);
         Long transactionCountBefore = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transaction", Long.class);
 
-        assertThatThrownBy(() -> transactionService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
+        assertThatThrownBy(() -> ledgerService.postTransfer(payer.getId(), UserAccountType.SAVINGS,
                 recipient.getId(), UserAccountType.SAVINGS, new BigDecimal("50.00"), UUID.randomUUID().toString()))
                 .isInstanceOf(InsufficientBalanceException.class);
 

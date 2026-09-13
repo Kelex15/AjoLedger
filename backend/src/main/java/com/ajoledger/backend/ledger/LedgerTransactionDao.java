@@ -1,4 +1,4 @@
-package com.ajoledger.backend.transaction;
+package com.ajoledger.backend.ledger;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -11,32 +11,34 @@ import java.util.UUID;
 
 @Repository
 @RequiredArgsConstructor
-public class TransactionDao {
+public class LedgerTransactionDao {
 
     private final JdbcTemplate jdbcTemplate;
 
-    private static final RowMapper<Transaction> ROW_MAPPER = (rs, rowNum) -> new Transaction(
+    private static final RowMapper<LedgerTransaction> ROW_MAPPER = (rs, rowNum) -> new LedgerTransaction(
             UUID.fromString(rs.getString("id")),
             rs.getBigDecimal("amount"),
             rs.getString("description"),
-            TransactionType.valueOf(rs.getString("transaction_type")),
+            LedgerTransactionType.valueOf(rs.getString("transaction_type")),
+            rs.getString("operation_id") == null ? null : UUID.fromString(rs.getString("operation_id")),
             rs.getTimestamp("created_at").toInstant()
     );
 
-    public void insertTransaction(Transaction transaction) {
+    public void insertTransaction(LedgerTransaction transaction) {
         String sql = """
-            INSERT INTO transaction (id, amount, description, transaction_type, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO transaction (id, amount, description, transaction_type, operation_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """;
         jdbcTemplate.update(sql,
                 transaction.id(),
                 transaction.amount(),
                 transaction.description(),
                 transaction.transactionType().name(),
+                transaction.operationId(),
                 Timestamp.from(transaction.createdAt()));
     }
 
-    public Optional<Transaction> findById(UUID id) {
+    public Optional<LedgerTransaction> findById(UUID id) {
         String sql = "SELECT * FROM transaction WHERE id = ?";
         return jdbcTemplate.query(sql, ROW_MAPPER, id).stream().findFirst();
     }

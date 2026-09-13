@@ -18,13 +18,13 @@ import com.ajoledger.backend.circle.exception.InviteNotFoundException;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
 import com.ajoledger.backend.email.EmailSender;
 import com.ajoledger.backend.ledger.LedgerDao;
+import com.ajoledger.backend.ledger.Leg;
+import com.ajoledger.backend.ledger.LedgerTransaction;
+import com.ajoledger.backend.ledger.LedgerService;
+import com.ajoledger.backend.ledger.LedgerTransactionType;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
+import com.ajoledger.backend.ledger.exception.LienWithdrawalBlockedException;
 import com.ajoledger.backend.system.Constants;
-import com.ajoledger.backend.transaction.Leg;
-import com.ajoledger.backend.transaction.Transaction;
-import com.ajoledger.backend.transaction.TransactionService;
-import com.ajoledger.backend.transaction.TransactionType;
-import com.ajoledger.backend.transaction.exception.LienWithdrawalBlockedException;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
 import com.ajoledger.backend.user.exception.UserNotFoundException;
@@ -62,7 +62,7 @@ public class CircleService {
     private static final long DEFAULT_PENALTY_MULTIPLIER = 3;
     private static final long REPUTATION_SMOOTHING_PRIOR = 1; // Laplace smoothing prior.
 
-    private final TransactionService transactionService;
+    private final LedgerService ledgerService;
     private final UserAccountRepository userAccountRepository;
     private final CircleRepository circleRepository;
     private final CircleAccountRepository circleAccountRepository;
@@ -254,28 +254,28 @@ public class CircleService {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
     }
 
-    public Transaction postContribution(UUID userId, UUID circleId, UUID circlePotAccountId,
+    public LedgerTransaction postContribution(UUID userId, UUID circleId, UUID circlePotAccountId,
                                          BigDecimal amount, String idempotencyKey) {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
         List<Leg> legs = List.of(
                 new Leg(savings.getId(), amount, BigDecimal.ZERO),
                 new Leg(circlePotAccountId, BigDecimal.ZERO, amount));
-        return transactionService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION", TransactionType.CONTRIBUTION,
+        return ledgerService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION", LedgerTransactionType.CONTRIBUTION,
                 amount, "Contribution to circle " + circleId, legs);
     }
 
     /** Exact inverse of postContribution's legs. */
-    public Transaction postContributionRefund(UUID userId, UUID circleId, UUID circlePotAccountId,
+    public LedgerTransaction postContributionRefund(UUID userId, UUID circleId, UUID circlePotAccountId,
                                                BigDecimal amount, String idempotencyKey) {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
         List<Leg> legs = List.of(
                 new Leg(circlePotAccountId, amount, BigDecimal.ZERO),
                 new Leg(savings.getId(), BigDecimal.ZERO, amount));
-        return transactionService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION_REFUND",
-                TransactionType.CONTRIBUTION_REFUND, amount, "Contribution refund for circle " + circleId, legs);
+        return ledgerService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION_REFUND",
+                LedgerTransactionType.CONTRIBUTION_REFUND, amount, "Contribution refund for circle " + circleId, legs);
     }
 
-    public Transaction postPayout(UUID circlePotAccountId, UUID circlePayoutId, UUID recipientUserId,
+    public LedgerTransaction postPayout(UUID circlePotAccountId, UUID circlePayoutId, UUID recipientUserId,
                                    BigDecimal grossAmount, BigDecimal groupLoss, String idempotencyKey) {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(recipientUserId, UserAccountType.SAVINGS);
         UserAccount lien = userAccountRepository.requireByUserIdAndType(recipientUserId, UserAccountType.LIEN);
@@ -287,34 +287,44 @@ public class CircleService {
         BigDecimal bufferFee = roundAmount(grossAmount.multiply(BigDecimal.valueOf(PAYOUT_BUFFER_FEE_RATE)));
         BigDecimal net = grossAmount.subtract(lienShare).subtract(bufferFee);
 
-        List<Leg> legs = new ArrayList<>(List.of(
-                new Leg(circlePotAccountId, grossAmount, BigDecimal.ZERO),
-                new Leg(savings.getId(), BigDecimal.ZERO, net),
-                new Leg(buffer.getId(), BigDecimal.ZERO, bufferFee)));
-        if (lienShare.signum() > 0) {
-            legs.add(new Leg(lien.getId(), BigDecimal.ZERO, lienShare));
-        }
-        return transactionService.postLedgerTransaction(idempotencyKey, "PAYOUT", TransactionType.PAYOUT, grossAmount,
-                "Payout for circle payout " + circlePayoutId, legs,
-                transaction -> {
-                    CirclePayout payout = circlePayoutRepository.findById(circlePayoutId)
-                            .orElseThrow(() -> new IllegalStateException("CirclePayout not found: " + circlePayoutId));
-                    payout.setTransactionId(transaction.id());
-                    circlePayoutRepository.saveAndFlush(payout);
-                });
+        return ledgerService.postLedgerOperation("PAYOUT", circlePayoutId, operationId -> {
+            CirclePayout payout = circlePayoutRepository.findById(circlePayoutId)
+                    .orElseThrow(() -> new IllegalStateException("CirclePayout not found: " + circlePayoutId));
+            payout.setOperationId(operationId);
+            circlePayoutRepository.saveAndFlush(payout);
+
+            LedgerTransaction main = ledgerService.postLedgerTransaction(idempotencyKey, "PAYOUT", LedgerTransactionType.PAYOUT,
+                    net, "Payout for circle payout " + circlePayoutId,
+                    List.of(new Leg(circlePotAccountId, net, BigDecimal.ZERO), new Leg(savings.getId(), BigDecimal.ZERO, net)),
+                    operationId);
+
+            ledgerService.postLedgerTransaction(idempotencyKey + ":buffer-fee", "PAYOUT_BUFFER_FEE",
+                    LedgerTransactionType.PAYOUT_BUFFER_FEE, bufferFee, "Buffer fee for circle payout " + circlePayoutId,
+                    List.of(new Leg(circlePotAccountId, bufferFee, BigDecimal.ZERO), new Leg(buffer.getId(), BigDecimal.ZERO, bufferFee)),
+                    operationId);
+
+            if (lienShare.signum() > 0) {
+                ledgerService.postLedgerTransaction(idempotencyKey + ":lien-skim", "PAYOUT_LIEN_SKIM",
+                        LedgerTransactionType.PAYOUT_LIEN_SKIM, lienShare, "Lien skim for circle payout " + circlePayoutId,
+                        List.of(new Leg(circlePotAccountId, lienShare, BigDecimal.ZERO), new Leg(lien.getId(), BigDecimal.ZERO, lienShare)),
+                        operationId);
+            }
+
+            return main;
+        });
     }
 
-    public Transaction postLienHold(UUID userId, BigDecimal amount, String idempotencyKey) {
+    public LedgerTransaction postLienHold(UUID userId, BigDecimal amount, String idempotencyKey) {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
         UserAccount lien = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.LIEN);
         List<Leg> legs = List.of(
                 new Leg(savings.getId(), amount, BigDecimal.ZERO),
                 new Leg(lien.getId(), BigDecimal.ZERO, amount));
-        return transactionService.postLedgerTransaction(idempotencyKey, "LIEN_HOLD", TransactionType.LIEN_HOLD,
+        return ledgerService.postLedgerTransaction(idempotencyKey, "LIEN_HOLD", LedgerTransactionType.LIEN_HOLD,
                 amount, "Lien top-up", legs);
     }
 
-    public Transaction postLienWithdrawal(UUID userId, BigDecimal amount, String idempotencyKey) {
+    public LedgerTransaction postLienWithdrawal(UUID userId, BigDecimal amount, String idempotencyKey) {
         UserAccount lien = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.LIEN);
         if (ledgerDao.getBalance(lien.getId()).subtract(amount).compareTo(computeLienWithdrawalFloor(userId)) < 0) {
             throw new LienWithdrawalBlockedException("Withdrawal would drop LIEN below the required floor");
@@ -323,7 +333,7 @@ public class CircleService {
         List<Leg> legs = List.of(
                 new Leg(lien.getId(), amount, BigDecimal.ZERO),
                 new Leg(savings.getId(), BigDecimal.ZERO, amount));
-        return transactionService.postLedgerTransaction(idempotencyKey, "LIEN_WITHDRAWAL", TransactionType.LIEN_WITHDRAWAL,
+        return ledgerService.postLedgerTransaction(idempotencyKey, "LIEN_WITHDRAWAL", LedgerTransactionType.LIEN_WITHDRAWAL,
                 amount, "Lien withdrawal", legs);
     }
 
@@ -345,7 +355,7 @@ public class CircleService {
     /** Default waterfall (design/v1.md §5): lien seized first, then the buffer covers the rest.
      * Both legs credit the circle's reserve account, released gradually into the pot at each
      * round's resolution instead of landing as a lump sum on whichever round resolves next. */
-    public List<Transaction> postDefaultWaterfall(UUID userId, UUID circleMembershipId, UUID circleReserveAccountId,
+    public List<LedgerTransaction> postDefaultWaterfall(UUID userId, UUID circleMembershipId, UUID circleReserveAccountId,
                                                     BigDecimal groupLoss, String idempotencyKey) {
         UserAccount lien = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.LIEN);
         UserAccount buffer = userAccountRepository.requireByUserIdAndType(
@@ -355,32 +365,34 @@ public class CircleService {
         BigDecimal seizedFromLien = lienBalance.min(groupLoss);
         BigDecimal remainingLoss = groupLoss.subtract(seizedFromLien);
 
-        List<Transaction> transactions = new ArrayList<>();
+        return ledgerService.postLedgerOperation("DEFAULT_WATERFALL", circleMembershipId, operationId -> {
+            List<LedgerTransaction> transactions = new ArrayList<>();
 
-        if (seizedFromLien.signum() > 0) {
-            List<Leg> seizureLegs = List.of(
-                    new Leg(lien.getId(), seizedFromLien, BigDecimal.ZERO),
-                    new Leg(circleReserveAccountId, BigDecimal.ZERO, seizedFromLien));
-            transactions.add(transactionService.postLedgerTransaction(idempotencyKey + ":lien-seizure", "LIEN_SEIZURE",
-                    TransactionType.LIEN_SEIZURE, seizedFromLien,
-                    "Lien seizure for membership " + circleMembershipId, seizureLegs));
-        }
-
-        if (remainingLoss.signum() > 0) {
-            BigDecimal bufferPayout = TrustCalculations.calculateCappedAmount(remainingLoss, ledgerDao.getBalance(buffer.getId()),
-                    BUFFER_DRAW_CAP_RATE);
-            if (bufferPayout.signum() > 0) {
-                List<Leg> bufferLegs = List.of(
-                        new Leg(buffer.getId(), bufferPayout, BigDecimal.ZERO),
-                        new Leg(circleReserveAccountId, BigDecimal.ZERO, bufferPayout));
-                transactions.add(transactionService.postLedgerTransaction(idempotencyKey + ":buffer-payout", "BUFFER_PAYOUT_TO_COVER_DEFAULT",
-                        TransactionType.BUFFER_PAYOUT_TO_COVER_DEFAULT, bufferPayout,
-                        "Buffer payout covering default for membership " + circleMembershipId, bufferLegs));
+            if (seizedFromLien.signum() > 0) {
+                List<Leg> seizureLegs = List.of(
+                        new Leg(lien.getId(), seizedFromLien, BigDecimal.ZERO),
+                        new Leg(circleReserveAccountId, BigDecimal.ZERO, seizedFromLien));
+                transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":lien-seizure", "LIEN_SEIZURE",
+                        LedgerTransactionType.LIEN_SEIZURE, seizedFromLien,
+                        "Lien seizure for membership " + circleMembershipId, seizureLegs, operationId));
             }
-            flagUnrecoveredShortfall(circleMembershipId, remainingLoss.subtract(bufferPayout));
-        }
 
-        return transactions;
+            if (remainingLoss.signum() > 0) {
+                BigDecimal bufferPayout = TrustCalculations.calculateCappedAmount(remainingLoss, ledgerDao.getBalance(buffer.getId()),
+                        BUFFER_DRAW_CAP_RATE);
+                if (bufferPayout.signum() > 0) {
+                    List<Leg> bufferLegs = List.of(
+                            new Leg(buffer.getId(), bufferPayout, BigDecimal.ZERO),
+                            new Leg(circleReserveAccountId, BigDecimal.ZERO, bufferPayout));
+                    transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":buffer-payout", "BUFFER_PAYOUT_TO_COVER_DEFAULT",
+                            LedgerTransactionType.BUFFER_PAYOUT_TO_COVER_DEFAULT, bufferPayout,
+                            "Buffer payout covering default for membership " + circleMembershipId, bufferLegs, operationId));
+                }
+                flagUnrecoveredShortfall(circleMembershipId, remainingLoss.subtract(bufferPayout));
+            }
+
+            return transactions;
+        });
     }
 
     /** Nothing further to recover here - an unrecovered shortfall just means the circle's own
@@ -617,8 +629,8 @@ public class CircleService {
         List<Leg> legs = List.of(
                 new Leg(reserve.getId(), releaseAmount, BigDecimal.ZERO),
                 new Leg(pot.getId(), BigDecimal.ZERO, releaseAmount));
-        transactionService.postLedgerTransaction(circleId + ":reserve-release-round-" + circle.getCurrentRound(),
-                "CIRCLE_RESERVE_DISBURSEMENT", TransactionType.CIRCLE_RESERVE_DISBURSEMENT, releaseAmount,
+        ledgerService.postLedgerTransaction(circleId + ":reserve-release-round-" + circle.getCurrentRound(),
+                "CIRCLE_RESERVE_DISBURSEMENT", LedgerTransactionType.CIRCLE_RESERVE_DISBURSEMENT, releaseAmount,
                 "Reserve release into pot for round " + circle.getCurrentRound(), legs);
     }
 

@@ -1,4 +1,4 @@
-package com.ajoledger.backend.transaction.idempotency;
+package com.ajoledger.backend.ledger.idempotency;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
