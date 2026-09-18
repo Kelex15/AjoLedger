@@ -10,6 +10,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 
 @Configuration
 @EnableWebSecurity
@@ -23,17 +25,30 @@ public class SecurityConfig {
             "/api/auth/refresh"
     };
 
+    // No auth cookie is in play yet on these, so there's nothing for CSRF to protect.
+    private static final String[] CSRF_EXEMPT_ENDPOINTS = {
+            "/api/auth/signup",
+            "/api/auth/login",
+            "/api/auth/verify-email",
+            "/api/auth/google"
+    };
+
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter,
+                                                     CsrfCookieFilter csrfCookieFilter) throws Exception {
         return http
                 .cors(Customizer.withDefaults())
-                .csrf(csfr -> csfr.disable())
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                        .ignoringRequestMatchers(CSRF_EXEMPT_ENDPOINTS))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_AUTH_ENDPOINTS).permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(csrfCookieFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
 

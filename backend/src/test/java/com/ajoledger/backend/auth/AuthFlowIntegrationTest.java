@@ -17,10 +17,11 @@ import java.util.UUID;
 
 import com.ajoledger.backend.auth.audit.AuditEventType;
 import com.ajoledger.backend.auth.audit.AuditLogRepository;
-import com.ajoledger.backend.auth.dto.AuthResponseDTO;
 import com.ajoledger.backend.auth.dto.MessageResponseDTO;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
+
+import org.springframework.test.web.servlet.client.ExchangeResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -78,6 +79,17 @@ class AuthFlowIntegrationTest {
                 .expectStatus().isOk();
     }
 
+    private String cookieValue(ExchangeResult result, String name) {
+        return result.getResponseCookies().getFirst(name).getValue();
+    }
+
+    /** POST endpoints outside the pre-auth flow (login/signup/etc.) require a matching
+     * XSRF-TOKEN cookie and X-XSRF-TOKEN header - grab one from any GET response. */
+    private String csrfToken() {
+        ExchangeResult result = restTestClient.get().uri("/api/circles/lien").exchange().returnResult();
+        return cookieValue(result, "XSRF-TOKEN");
+    }
+
     @Test
     void fullHappyPathFlow() {
         String email = uniqueEmail();
@@ -85,15 +97,15 @@ class AuthFlowIntegrationTest {
         signupExpecting(email, org.springframework.http.HttpStatus.CREATED);
         verifyEmail(verificationTokenFor(email));
 
-        AuthResponseDTO tokens = restTestClient.post().uri("/api/auth/login")
+        ExchangeResult loginResult = restTestClient.post().uri("/api/auth/login")
                 .body(Map.of("email", email, "password", PASSWORD))
                 .exchange()
                 .expectStatus().isOk()
-                .expectBody(AuthResponseDTO.class)
-                .returnResult()
-                .getResponseBody();
-        assertThat(tokens.accessToken()).isNotBlank();
-        assertThat(tokens.refreshToken()).isNotBlank();
+                .returnResult();
+        String accessToken = cookieValue(loginResult, "access_token");
+        String refreshToken = cookieValue(loginResult, "refresh_token");
+        assertThat(accessToken).isNotBlank();
+        assertThat(refreshToken).isNotBlank();
 
         User user = userRepository.findByEmail(email).orElseThrow();
 
@@ -102,27 +114,35 @@ class AuthFlowIntegrationTest {
                 .expectStatus().isForbidden();
 
         restTestClient.get().uri("/api/user/" + user.getId())
-                .header("Authorization", "Bearer " + tokens.accessToken())
+                .cookie("access_token", accessToken)
                 .exchange()
                 .expectStatus().isOk();
 
-        AuthResponseDTO rotated = restTestClient.post().uri("/api/auth/refresh")
-                .body(Map.of("refreshToken", tokens.refreshToken()))
+        String csrf = csrfToken();
+
+        ExchangeResult rotateResult = restTestClient.post().uri("/api/auth/refresh")
+                .cookie("refresh_token", refreshToken)
+                .cookie("XSRF-TOKEN", csrf)
+                .header("X-XSRF-TOKEN", csrf)
                 .exchange()
                 .expectStatus().isOk()
-                .expectBody(AuthResponseDTO.class)
-                .returnResult()
-                .getResponseBody();
-        assertThat(rotated.refreshToken()).isNotEqualTo(tokens.refreshToken());
+                .returnResult();
+        String rotatedAccessToken = cookieValue(rotateResult, "access_token");
+        String rotatedRefreshToken = cookieValue(rotateResult, "refresh_token");
+        assertThat(rotatedRefreshToken).isNotEqualTo(refreshToken);
 
         restTestClient.post().uri("/api/auth/logout")
-                .header("Authorization", "Bearer " + rotated.accessToken())
-                .body(Map.of("refreshToken", rotated.refreshToken()))
+                .cookie("access_token", rotatedAccessToken)
+                .cookie("refresh_token", rotatedRefreshToken)
+                .cookie("XSRF-TOKEN", csrf)
+                .header("X-XSRF-TOKEN", csrf)
                 .exchange()
                 .expectStatus().isNoContent();
 
         restTestClient.post().uri("/api/auth/refresh")
-                .body(Map.of("refreshToken", rotated.refreshToken()))
+                .cookie("refresh_token", rotatedRefreshToken)
+                .cookie("XSRF-TOKEN", csrf)
+                .header("X-XSRF-TOKEN", csrf)
                 .exchange()
                 .expectStatus().isUnauthorized();
     }
@@ -133,32 +153,37 @@ class AuthFlowIntegrationTest {
         signupExpecting(email, org.springframework.http.HttpStatus.CREATED);
         verifyEmail(verificationTokenFor(email));
 
-        AuthResponseDTO originalTokens = restTestClient.post().uri("/api/auth/login")
+        ExchangeResult loginResult = restTestClient.post().uri("/api/auth/login")
                 .body(Map.of("email", email, "password", PASSWORD))
                 .exchange()
                 .expectStatus().isOk()
-                .expectBody(AuthResponseDTO.class)
-                .returnResult()
-                .getResponseBody();
+                .returnResult();
+        String originalRefreshToken = cookieValue(loginResult, "refresh_token");
 
-        AuthResponseDTO rotated = restTestClient.post().uri("/api/auth/refresh")
-                .body(Map.of("refreshToken", originalTokens.refreshToken()))
+        String csrf = csrfToken();
+
+        ExchangeResult rotateResult = restTestClient.post().uri("/api/auth/refresh")
+                .cookie("refresh_token", originalRefreshToken)
+                .cookie("XSRF-TOKEN", csrf)
+                .header("X-XSRF-TOKEN", csrf)
                 .exchange()
                 .expectStatus().isOk()
-                .expectBody(AuthResponseDTO.class)
-                .returnResult()
-                .getResponseBody();
-        String activeToken = rotated.refreshToken();
+                .returnResult();
+        String activeToken = cookieValue(rotateResult, "refresh_token");
 
         // reusing the already-rotated (revoked) original token triggers reuse detection
         restTestClient.post().uri("/api/auth/refresh")
-                .body(Map.of("refreshToken", originalTokens.refreshToken()))
+                .cookie("refresh_token", originalRefreshToken)
+                .cookie("XSRF-TOKEN", csrf)
+                .header("X-XSRF-TOKEN", csrf)
                 .exchange()
                 .expectStatus().isUnauthorized();
 
         // the token that was still valid a moment ago must now also be dead - whole family revoked
         restTestClient.post().uri("/api/auth/refresh")
-                .body(Map.of("refreshToken", activeToken))
+                .cookie("refresh_token", activeToken)
+                .cookie("XSRF-TOKEN", csrf)
+                .header("X-XSRF-TOKEN", csrf)
                 .exchange()
                 .expectStatus().isUnauthorized();
 
