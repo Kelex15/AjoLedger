@@ -2,8 +2,7 @@ import { createContext, useContext, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../api/client'
 import { fetchCurrentUser, login as loginRequest, logout as logoutRequest, type UserProfile } from '../api/auth'
-
-const CURRENT_USER_QUERY_KEY = ['currentUser']
+import { queryKeys } from '../api/queryKeys'
 
 interface AuthContextValue {
   user: UserProfile | null | undefined
@@ -18,7 +17,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
 
   const { data: user, isLoading } = useQuery({
-    queryKey: CURRENT_USER_QUERY_KEY,
+    queryKey: queryKeys.currentUser,
     queryFn: async () => {
       try {
         return await fetchCurrentUser()
@@ -34,12 +33,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: ({ email, password }: { email: string; password: string }) => loginRequest(email, password),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: CURRENT_USER_QUERY_KEY }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.currentUser }),
   })
 
   const logoutMutation = useMutation({
     mutationFn: logoutRequest,
-    onSuccess: () => queryClient.setQueryData(CURRENT_USER_QUERY_KEY, null),
+    onSuccess: () => queryClient.setQueryData(queryKeys.currentUser, null),
   })
 
   const value: AuthContextValue = {

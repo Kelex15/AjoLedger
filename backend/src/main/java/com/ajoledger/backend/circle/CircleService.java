@@ -468,6 +468,12 @@ public class CircleService {
         return circle;
     }
 
+    public Circle getMyCircle(UUID userId) {
+        return circleMembershipRepository.findByUser_IdAndStatus(userId, MembershipStatus.ACTIVE)
+                .map(CircleMembership::getCircle)
+                .orElseThrow(() -> new CircleNotFoundException("No active circle for user: " + userId));
+    }
+
     public List<CircleMembership> getActiveMembers(UUID circleId) {
         if (!circleRepository.existsById(circleId)) {
             throw new CircleNotFoundException("Circle not found: " + circleId);

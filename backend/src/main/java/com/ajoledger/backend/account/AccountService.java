@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -58,6 +59,13 @@ public class AccountService {
             throw new AccountNotFoundException("No such account");
         }
         return userAccountRepository.findByUserIdAndUserAccountType(userId, type);
+    }
+
+    public List<UserAccount> getUserAccounts(UUID userId) {
+        if (Constants.Account.SYSTEM_USER_ID.equals(userId)) {
+            throw new AccountNotFoundException("No such account");
+        }
+        return userAccountRepository.findByUserId(userId);
     }
 
     public Optional<CircleAccount> getCircleAccount(UUID circleId, CircleAccountType type) {

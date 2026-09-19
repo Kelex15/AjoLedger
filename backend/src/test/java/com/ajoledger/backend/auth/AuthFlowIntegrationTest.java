@@ -86,7 +86,7 @@ class AuthFlowIntegrationTest {
     /** POST endpoints outside the pre-auth flow (login/signup/etc.) require a matching
      * XSRF-TOKEN cookie and X-XSRF-TOKEN header - grab one from any GET response. */
     private String csrfToken() {
-        ExchangeResult result = restTestClient.get().uri("/api/circles/lien").exchange().returnResult();
+        ExchangeResult result = restTestClient.get().uri("/api/ledger/lien").exchange().returnResult();
         return cookieValue(result, "XSRF-TOKEN");
     }
 

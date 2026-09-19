@@ -8,6 +8,7 @@ import java.util.UUID;
 
 public record CircleMemberResponseDTO(
     UUID userId,
+    String username,
     Integer joinPosition,
     int payoutPosition,
     String status,
@@ -19,6 +20,7 @@ public record CircleMemberResponseDTO(
         CircleMembership membership = standing.membership();
         return new CircleMemberResponseDTO(
                 membership.getUser().getId(),
+                membership.getUser().getUsername(),
                 membership.getPosition(),
                 standing.payoutPosition(),
                 membership.getStatus().name(),

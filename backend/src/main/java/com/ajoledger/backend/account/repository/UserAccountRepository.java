@@ -1,5 +1,6 @@
 package com.ajoledger.backend.account.repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -11,6 +12,8 @@ import com.ajoledger.backend.account.exception.AccountNotFoundException;
 
 public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> {
     Optional<UserAccount> findByUserIdAndUserAccountType(UUID userId, UserAccountType userAccountType);
+
+    List<UserAccount> findByUserId(UUID userId);
 
     /** Unguarded, unlike AccountService's getUserAccount. Ledger-writing code legitimately needs
      * to resolve system accounts (SYSTEM_BUFFER, CLEARING_*) to build legs. */
