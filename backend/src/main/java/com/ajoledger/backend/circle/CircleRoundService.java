@@ -117,7 +117,7 @@ public class CircleRoundService {
 
             if (alreadyPaidOut) {
                 int position = membership.getPosition() != null ? membership.getPosition() : 0;
-                BigDecimal groupLoss = resolveSizingPolicy(circle).calculatePotentialGroupLoss(circle, user, position);
+                BigDecimal groupLoss = resolveSizingPolicy(circle).calculateRealizedGroupLoss(circle, position);
 
                 // Waterfall runs first, membership only flips to DEFAULTED once funds are actually
                 // seized. If this throws, the membership stays ACTIVE so the next scheduler pass
