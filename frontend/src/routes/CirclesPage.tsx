@@ -85,6 +85,7 @@ function BrowseCircles({ onJoined }: { onJoined: () => void }) {
       queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
       queryClient.invalidateQueries({ queryKey: queryKeys.myCircleHistory })
       queryClient.invalidateQueries({ queryKey: queryKeys.openCircles })
+      queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
       onJoined()
     },
   })
@@ -136,6 +137,7 @@ function NoCircle() {
     queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
     queryClient.invalidateQueries({ queryKey: queryKeys.myCircleHistory })
     queryClient.invalidateQueries({ queryKey: queryKeys.openCircles })
+    queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
   }
 
   const [name, setName] = useState('')
@@ -348,6 +350,7 @@ function MyCircle({ circle }: { circle: Circle }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
       queryClient.invalidateQueries({ queryKey: queryKeys.myCircleHistory })
+      queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
     },
   })
 
@@ -367,6 +370,7 @@ function MyCircle({ circle }: { circle: Circle }) {
       queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
       queryClient.invalidateQueries({ queryKey: queryKeys.myCircleHistory })
       queryClient.invalidateQueries({ queryKey: queryKeys.openCircles })
+      queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
     },
   })
 
