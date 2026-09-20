@@ -111,7 +111,7 @@ class AuthFlowIntegrationTest {
 
         restTestClient.get().uri("/api/user/" + user.getId())
                 .exchange()
-                .expectStatus().isForbidden();
+                .expectStatus().isUnauthorized();
 
         restTestClient.get().uri("/api/user/" + user.getId())
                 .cookie("access_token", accessToken)
