@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
 import { ApiError } from '../api/client'
 import { signup } from '../api/auth'
+import { ErrorMessage } from '../components/ErrorMessage'
 
 export function SignupPage() {
   const [username, setUsername] = useState('')
@@ -66,7 +67,7 @@ export function SignupPage() {
         <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
       </label>
 
-      {error && <p role="alert">{error}</p>}
+      <ErrorMessage message={error} />
 
       <button type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Signing up…' : 'Sign up'}

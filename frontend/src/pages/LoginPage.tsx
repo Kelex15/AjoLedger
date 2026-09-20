@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { ErrorMessage } from '../components/ErrorMessage'
 import { GoogleSignInButton } from '../components/GoogleSignInButton'
 
 export function LoginPage() {
@@ -68,7 +69,7 @@ export function LoginPage() {
           />
         </label>
 
-        {error && <p role="alert">{error}</p>}
+        <ErrorMessage message={error} />
 
         <button type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Logging in…' : 'Log in'}

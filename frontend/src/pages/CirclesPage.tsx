@@ -19,6 +19,7 @@ import {
 import { ApiError } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
 import { useAuth } from '../auth/AuthContext'
+import { ErrorMessage } from '../components/ErrorMessage'
 
 export function CirclesPage() {
   const { data: circle, isLoading } = useQuery({
@@ -125,7 +126,7 @@ function BrowseCircles({ onJoined }: { onJoined: () => void }) {
           ))}
         </ul>
       )}
-      {joinError && <p role="alert">{joinError}</p>}
+      <ErrorMessage message={joinError} />
     </div>
   )
 }
@@ -297,7 +298,7 @@ function NoCircle() {
           Invite-only
         </label>
 
-        {createError && <p role="alert">{createError}</p>}
+        <ErrorMessage message={createError} />
 
         <button type="submit" disabled={createMutation.isPending}>
           {createMutation.isPending ? 'Creating…' : 'Create circle'}
@@ -327,7 +328,7 @@ function NoCircle() {
         </div>
       )}
 
-      {redeemError && <p role="alert">{redeemError}</p>}
+      <ErrorMessage message={redeemError} />
     </div>
   )
 }
@@ -466,7 +467,7 @@ function MyCircle({ circle }: { circle: Circle }) {
         ))}
       </ul>
 
-      {actionError && <p role="alert">{actionError}</p>}
+      <ErrorMessage message={actionError} />
 
       {!isCreator && circle.status === 'FORMING' && (
         <button onClick={handleLeave} disabled={leaveMutation.isPending}>
@@ -498,7 +499,7 @@ function MyCircle({ circle }: { circle: Circle }) {
                   <input value={inviteTarget} onChange={(event) => setInviteTarget(event.target.value)} required />
                 </label>
 
-                {inviteError && <p role="alert">{inviteError}</p>}
+                <ErrorMessage message={inviteError} />
 
                 <button type="submit" disabled={inviteMutation.isPending}>
                   {inviteMutation.isPending ? 'Inviting…' : 'Send invite'}

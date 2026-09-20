@@ -7,6 +7,7 @@ import { deposit, withdraw, type FundingType } from '../api/funding'
 import { queryKeys } from '../api/queryKeys'
 import { lienHold, lienWithdraw, transfer } from '../api/transactions'
 import { useAuth } from '../auth/AuthContext'
+import { ErrorMessage } from '../components/ErrorMessage'
 
 export function DashboardPage() {
   const { user } = useAuth()
@@ -173,7 +174,7 @@ export function DashboardPage() {
           />
         </label>
 
-        {error && <p role="alert">{error}</p>}
+        <ErrorMessage message={error} />
 
         <button type="submit" disabled={depositMutation.isPending}>
           {depositMutation.isPending ? 'Depositing…' : 'Deposit'}
@@ -206,7 +207,7 @@ export function DashboardPage() {
           />
         </label>
 
-        {withdrawError && <p role="alert">{withdrawError}</p>}
+        <ErrorMessage message={withdrawError} />
 
         <button type="submit" disabled={withdrawMutation.isPending}>
           {withdrawMutation.isPending ? 'Withdrawing…' : 'Withdraw'}
@@ -271,7 +272,7 @@ export function DashboardPage() {
           />
         </label>
 
-        {transferError && <p role="alert">{transferError}</p>}
+        <ErrorMessage message={transferError} />
 
         <button type="submit" disabled={transferMutation.isPending}>
           {transferMutation.isPending ? 'Transferring…' : 'Transfer'}
@@ -298,7 +299,7 @@ export function DashboardPage() {
         />
       </label>
 
-      {lienError && <p role="alert">{lienError}</p>}
+      <ErrorMessage message={lienError} />
 
       <button onClick={handleLienHold} disabled={lienHoldMutation.isPending || !lienAmount}>
         {lienHoldMutation.isPending ? 'Adding…' : 'Add to lien'}
