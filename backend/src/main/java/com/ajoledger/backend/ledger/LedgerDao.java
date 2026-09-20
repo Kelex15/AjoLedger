@@ -76,6 +76,24 @@ public class LedgerDao {
         return jdbcTemplate.queryForObject(sql, BigDecimal.class, accountId);
     }
 
+    /** Batched form of {@link #getBalance}. Accounts with no ledger entries are simply absent
+     * from the result rather than mapped to zero - callers should default missing lookups. */
+    public Map<UUID, BigDecimal> getBalances(List<UUID> accountIds) {
+        List<UUID> distinctIds = accountIds.stream().distinct().toList();
+        if (distinctIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = distinctIds.stream().map(id -> "?").collect(Collectors.joining(","));
+        String sql = "SELECT account_id, SUM(credit_amount - debit_amount) AS balance FROM ledger_entry " +
+                "WHERE account_id IN (" + placeholders + ") GROUP BY account_id";
+
+        Map<UUID, BigDecimal> balancesByAccountId = new LinkedHashMap<>();
+        jdbcTemplate.query(sql, rs -> {
+            balancesByAccountId.put(UUID.fromString(rs.getString("account_id")), rs.getBigDecimal("balance"));
+        }, distinctIds.toArray());
+        return balancesByAccountId;
+    }
+
     public List<LedgerEntry> findLegsByTransactionId(UUID transactionId) {
         String sql = "SELECT * FROM ledger_entry WHERE transaction_id = ?";
         return jdbcTemplate.query(sql, (rs, rowNum) -> new LedgerEntry(

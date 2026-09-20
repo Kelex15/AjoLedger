@@ -6,6 +6,7 @@ import com.ajoledger.backend.account.Currency;
 import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.account.entity.CircleAccount;
 import com.ajoledger.backend.account.entity.UserAccount;
+import com.ajoledger.backend.account.exception.AccountNotFoundException;
 import com.ajoledger.backend.account.repository.CircleAccountRepository;
 import com.ajoledger.backend.account.repository.UserAccountRepository;
 import com.ajoledger.backend.circle.dto.CircleCreateRequestDTO;
@@ -42,8 +43,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -248,8 +252,7 @@ public class CircleService {
     }
 
     private List<CircleMemberStanding> rankByReputation(Circle circle, List<CircleMembership> members) {
-        Map<UUID, Double> scoresByMembershipId = members.stream()
-                .collect(Collectors.toMap(CircleMembership::getId, m -> computeReputationScore(circle, m.getUser())));
+        Map<UUID, Double> scoresByMembershipId = computeReputationScores(circle, members);
         members.sort(Comparator
                 .<CircleMembership, Double>comparing(m -> scoresByMembershipId.get(m.getId()))
                 .reversed()
@@ -269,11 +272,53 @@ public class CircleService {
         long successes = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.COMPLETED);
         long withdrawals = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.WITHDRAWN);
         long defaults = circleMembershipRepository.countByUser_IdAndStatus(user.getId(), MembershipStatus.DEFAULTED);
+        UserAccount lienAccount = userAccountRepository.requireByUserIdAndType(user.getId(), UserAccountType.LIEN);
+        double lienBalance = ledgerDao.getBalance(lienAccount.getId()).doubleValue();
+        return computeReputationScore(circle, successes, withdrawals, defaults, lienBalance);
+    }
+
+    /** Batched form of {@link #computeReputationScore(Circle, User)}: 4 queries total instead of
+     * 5 per member, so ranking a whole circle doesn't grow linearly with its member count. */
+    private Map<UUID, Double> computeReputationScores(Circle circle, List<CircleMembership> members) {
+        List<UUID> userIds = members.stream().map(m -> m.getUser().getId()).toList();
+
+        Map<UUID, Map<MembershipStatus, Long>> statusCountsByUserId = circleMembershipRepository
+                .countByUser_IdInAndStatusIn(userIds,
+                        List.of(MembershipStatus.COMPLETED, MembershipStatus.WITHDRAWN, MembershipStatus.DEFAULTED))
+                .stream()
+                .collect(Collectors.groupingBy(CircleMembershipRepository.UserStatusCount::getUserId,
+                        Collectors.toMap(CircleMembershipRepository.UserStatusCount::getStatus,
+                                CircleMembershipRepository.UserStatusCount::getCount)));
+
+        Map<UUID, UUID> lienAccountIdByUserId = userAccountRepository
+                .findByUserIdInAndUserAccountType(userIds, UserAccountType.LIEN).stream()
+                .collect(Collectors.toMap(account -> account.getUser().getId(), UserAccount::getId));
+        for (UUID userId : userIds) {
+            if (!lienAccountIdByUserId.containsKey(userId)) {
+                throw new AccountNotFoundException("No " + UserAccountType.LIEN + " account for user " + userId);
+            }
+        }
+
+        Map<UUID, BigDecimal> lienBalanceByAccountId = ledgerDao.getBalances(List.copyOf(lienAccountIdByUserId.values()));
+
+        Map<UUID, Double> scoresByMembershipId = new HashMap<>();
+        for (CircleMembership member : members) {
+            UUID userId = member.getUser().getId();
+            Map<MembershipStatus, Long> statusCounts = statusCountsByUserId.getOrDefault(userId, Map.of());
+            long successes = statusCounts.getOrDefault(MembershipStatus.COMPLETED, 0L);
+            long withdrawals = statusCounts.getOrDefault(MembershipStatus.WITHDRAWN, 0L);
+            long defaults = statusCounts.getOrDefault(MembershipStatus.DEFAULTED, 0L);
+            BigDecimal lienBalance = lienBalanceByAccountId.getOrDefault(lienAccountIdByUserId.get(userId), BigDecimal.ZERO);
+            scoresByMembershipId.put(member.getId(),
+                    computeReputationScore(circle, successes, withdrawals, defaults, lienBalance.doubleValue()));
+        }
+        return scoresByMembershipId;
+    }
+
+    private double computeReputationScore(Circle circle, long successes, long withdrawals, long defaults, double lienBalance) {
         long penalizedFailures = TrustCalculations.calculatePenalizedFailures(withdrawals, defaults, DEFAULT_PENALTY_MULTIPLIER);
         double successRate = TrustCalculations.calculateSuccessRate(successes, penalizedFailures, REPUTATION_SMOOTHING_PRIOR);
 
-        UserAccount lienAccount = userAccountRepository.requireByUserIdAndType(user.getId(), UserAccountType.LIEN);
-        double lienBalance = ledgerDao.getBalance(lienAccount.getId()).doubleValue();
         // Locked circles use the real round count; a still-FORMING circle has no lockedMemberCount
         // yet, so maxMembers is the best available pre-lock estimate.
         int totalRounds = circle.getLockedMemberCount() != null
@@ -738,8 +783,9 @@ public class CircleService {
         // Checked regardless of whether this call paid anyone: a withdrawal can vacate the
         // circle's last remaining position with nobody left to shift into it, so a round with
         // no recipient still needs to be recognized as "everyone left is already paid."
+        Set<UUID> paidRecipientIds = new HashSet<>(circlePayoutRepository.findRecipientIdsByCircle_Id(circleId));
         boolean everyonePaid = activeMembers.stream()
-                .allMatch(m -> circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circleId, m.getUser().getId()));
+                .allMatch(m -> paidRecipientIds.contains(m.getUser().getId()));
         if (everyonePaid) {
             completeCircle(circle, resolveSizingPolicy(circle).getTotalRounds(circle));
         }
