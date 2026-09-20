@@ -17,6 +17,7 @@ import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
 import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
 import com.ajoledger.backend.circle.exception.InviteNotFoundException;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
+import com.ajoledger.backend.email.EmailSender;
 import com.ajoledger.backend.ledger.LedgerDao;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.user.User;
@@ -35,6 +36,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -58,6 +60,7 @@ public class CircleService {
     private final LedgerDao ledgerDao;
     private final CircleTransactionsService circleTransactionsService;
     private final CircleRoundService circleRoundService;
+    private final EmailSender emailSender;
 
     private CircleSizingPolicy resolveSizingPolicy(Circle circle) {
         return sizingPoliciesByType.get(circle.getSizingPolicyType().name());
@@ -125,7 +128,12 @@ public class CircleService {
                 .invitedUser(invitedUser)
                 .invitedEmail(invitedUser == null ? email : null)
                 .build();
-        return circleInviteRepository.save(invite);
+        invite = circleInviteRepository.save(invite);
+
+        String toEmail = invitedUser != null ? invitedUser.getEmail() : email;
+        emailSender.sendDefaultNotificationEmail(toEmail,
+                "You've been invited to join the circle \"" + circle.getName() + "\". Invite code: " + invite.getCode());
+        return invite;
     }
 
     @Transactional
@@ -227,6 +235,10 @@ public class CircleService {
         List<CircleMembership> members = circleMembershipRepository
                 .findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE);
         return rankByReputation(circle, members);
+    }
+
+    public Set<UUID> getPaidRecipientIds(UUID circleId) {
+        return circleRoundService.getPaidRecipientIds(circleId);
     }
 
     private List<CircleMemberStanding> rankByReputation(Circle circle, List<CircleMembership> members) {

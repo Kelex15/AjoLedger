@@ -25,6 +25,7 @@ export interface CircleMember {
   status: string
   joinedAt: string
   reputationScore: number
+  paid: boolean
 }
 
 export interface CircleMembership {

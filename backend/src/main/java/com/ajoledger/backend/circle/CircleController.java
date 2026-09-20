@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -99,8 +100,10 @@ public class CircleController {
 
     @GetMapping(path = "/{circleId}/members", version = "1")
     public ResponseEntity<List<CircleMemberResponseDTO>> members(@PathVariable UUID circleId) {
+        Set<UUID> paidRecipientIds = circleService.getPaidRecipientIds(circleId);
         List<CircleMemberResponseDTO> members = circleService.getMemberStandings(circleId).stream()
-                .map(CircleMemberResponseDTO::of)
+                .map(standing -> CircleMemberResponseDTO.of(standing,
+                        paidRecipientIds.contains(standing.membership().getUser().getId())))
                 .toList();
         return ResponseEntity.ok(members);
     }

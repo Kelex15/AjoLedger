@@ -452,6 +452,7 @@ function MyCircle({ circle }: { circle: Circle }) {
           <li key={member.userId}>
             {member.userId === user?.id ? 'You' : member.username} — position {member.payoutPosition}, {member.status},
             reputation {member.reputationScore.toFixed(2)}
+            {member.paid && ' · Paid'}
             {isCreator && circle.status === 'FORMING' && member.userId !== user?.id && (
               <>
                 {' '}

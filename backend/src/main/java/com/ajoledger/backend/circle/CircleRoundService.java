@@ -41,6 +41,10 @@ public class CircleRoundService {
     private final EmailSender emailSender;
     private final CircleTransactionsService circleTransactionsService;
 
+    public Set<UUID> getPaidRecipientIds(UUID circleId) {
+        return new HashSet<>(circlePayoutRepository.findRecipientIdsByCircle_Id(circleId));
+    }
+
     private CircleSizingPolicy resolveSizingPolicy(Circle circle) {
         return sizingPoliciesByType.get(circle.getSizingPolicyType().name());
     }

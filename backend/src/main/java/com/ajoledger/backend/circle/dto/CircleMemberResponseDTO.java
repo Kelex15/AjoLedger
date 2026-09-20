@@ -13,10 +13,11 @@ public record CircleMemberResponseDTO(
     int payoutPosition,
     String status,
     Instant joinedAt,
-    double reputationScore
+    double reputationScore,
+    boolean paid
 ) {
 
-    public static CircleMemberResponseDTO of(CircleMemberStanding standing) {
+    public static CircleMemberResponseDTO of(CircleMemberStanding standing, boolean paid) {
         CircleMembership membership = standing.membership();
         return new CircleMemberResponseDTO(
                 membership.getUser().getId(),
@@ -25,6 +26,7 @@ public record CircleMemberResponseDTO(
                 standing.payoutPosition(),
                 membership.getStatus().name(),
                 membership.getJoinedAt(),
-                standing.reputationScore());
+                standing.reputationScore(),
+                paid);
     }
 }
