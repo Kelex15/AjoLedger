@@ -5,7 +5,7 @@ import { BrowserRouter } from 'react-router'
 import App from './App.tsx'
 import { ApiError } from './api/client'
 import { queryKeys } from './api/queryKeys'
-import { AuthProvider } from './auth/AuthContext'
+import { AuthProvider } from './auth/AuthProvider'
 
 // A 401 that reaches here means apiFetch already tried a silent refresh-and-retry and it still
 // failed - the refresh token itself is gone, not just the short-lived access token. Flipping

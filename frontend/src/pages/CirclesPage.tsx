@@ -20,7 +20,7 @@ import {
 } from '../api/circles'
 import { ApiError } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { env } from '../config/env'
 
@@ -492,6 +492,7 @@ function MyCircle({ circle }: { circle: Circle }) {
           <li key={member.userId}>
             {member.userId === user?.id ? 'You' : member.username} — position {member.payoutPosition}, {member.status},
             reputation {member.reputationScore.toFixed(2)}
+            {member.userId === circle.createdByUserId && ' · Creator'}
             {member.paid && ' · Paid'}
             {isCreator && circle.status === 'FORMING' && member.userId !== user?.id && (
               <>

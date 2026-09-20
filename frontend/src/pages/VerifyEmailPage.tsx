@@ -7,14 +7,12 @@ export function VerifyEmailPage() {
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
 
-  const [status, setStatus] = useState<'pending' | 'success' | 'error'>('pending')
-  const [message, setMessage] = useState('')
+  const [status, setStatus] = useState<'pending' | 'success' | 'error'>(token ? 'pending' : 'error')
+  const [message, setMessage] = useState(token ? '' : 'Missing verification token.')
   const calledForToken = useRef<string | null>(null)
 
   useEffect(() => {
     if (!token) {
-      setStatus('error')
-      setMessage('Missing verification token.')
       return
     }
     // The token is single-use server-side; StrictMode's double-invoke would

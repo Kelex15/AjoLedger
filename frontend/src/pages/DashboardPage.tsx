@@ -6,7 +6,7 @@ import { ApiError } from '../api/client'
 import { deposit, withdraw, type FundingType } from '../api/funding'
 import { queryKeys } from '../api/queryKeys'
 import { lienHold, lienWithdraw, transfer } from '../api/transactions'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/useAuth'
 import { ErrorMessage } from '../components/ErrorMessage'
 
 export function DashboardPage() {
