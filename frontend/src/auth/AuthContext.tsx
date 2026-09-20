@@ -1,13 +1,20 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../api/client'
-import { fetchCurrentUser, login as loginRequest, logout as logoutRequest, type UserProfile } from '../api/auth'
+import {
+  fetchCurrentUser,
+  login as loginRequest,
+  loginWithGoogle as loginWithGoogleRequest,
+  logout as logoutRequest,
+  type UserProfile,
+} from '../api/auth'
 import { queryKeys } from '../api/queryKeys'
 
 interface AuthContextValue {
   user: UserProfile | null | undefined
   isLoading: boolean
   login: (email: string, password: string) => Promise<void>
+  loginWithGoogle: (idToken: string) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -36,6 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.currentUser }),
   })
 
+  const loginWithGoogleMutation = useMutation({
+    mutationFn: loginWithGoogleRequest,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.currentUser }),
+  })
+
   const logoutMutation = useMutation({
     mutationFn: logoutRequest,
     onSuccess: () => queryClient.setQueryData(queryKeys.currentUser, null),
@@ -46,6 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     login: async (email, password) => {
       await loginMutation.mutateAsync({ email, password })
+    },
+    loginWithGoogle: async (idToken) => {
+      await loginWithGoogleMutation.mutateAsync(idToken)
     },
     logout: async () => {
       await logoutMutation.mutateAsync()

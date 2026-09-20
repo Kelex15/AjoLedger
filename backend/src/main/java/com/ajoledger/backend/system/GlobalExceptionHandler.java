@@ -25,6 +25,7 @@ import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
 import com.ajoledger.backend.circle.exception.InviteNotFoundException;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.ledger.exception.IdempotencyKeyConflictException;
+import com.ajoledger.backend.ledger.exception.InvalidTransferTargetException;
 import com.ajoledger.backend.ledger.exception.LienWithdrawalBlockedException;
 import com.ajoledger.backend.user.exception.UserNotFoundException;
 
@@ -74,6 +75,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(LienWithdrawalBlockedException.class)
     public ResponseEntity<MessageResponseDTO> handleLienWithdrawalBlocked(LienWithdrawalBlockedException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidTransferTargetException.class)
+    public ResponseEntity<MessageResponseDTO> handleInvalidTransferTarget(InvalidTransferTargetException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new MessageResponseDTO(e.getMessage()));
     }
 
     @ExceptionHandler(UserNotFoundException.class)

@@ -1,18 +1,17 @@
 import { apiFetch } from './client'
-import type { UserAccountType } from './accounts'
 
 export type FundingType = 'STRIPE' | 'PAYPAL'
 
 export interface FundingTransaction {
   id: string
   amount: number
+  currency: string
   description: string
   transactionType: string
   createdAt: string
 }
 
 export interface DepositFields {
-  targetType: UserAccountType
   fundingType: FundingType
   amount: number
 }
@@ -25,7 +24,6 @@ export function deposit(fields: DepositFields) {
 }
 
 export interface WithdrawalFields {
-  sourceType: UserAccountType
   fundingType: FundingType
   amount: number
 }

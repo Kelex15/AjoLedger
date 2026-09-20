@@ -1,5 +1,7 @@
 package com.ajoledger.backend.ledger;
 
+import com.ajoledger.backend.account.Currency;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -18,6 +20,7 @@ public class LedgerTransactionDao {
     private static final RowMapper<LedgerTransaction> ROW_MAPPER = (rs, rowNum) -> new LedgerTransaction(
             UUID.fromString(rs.getString("id")),
             rs.getBigDecimal("amount"),
+            Currency.valueOf(rs.getString("currency")),
             rs.getString("description"),
             LedgerTransactionType.valueOf(rs.getString("transaction_type")),
             rs.getString("operation_id") == null ? null : UUID.fromString(rs.getString("operation_id")),
@@ -26,12 +29,13 @@ public class LedgerTransactionDao {
 
     public void insertTransaction(LedgerTransaction transaction) {
         String sql = """
-            INSERT INTO transaction (id, amount, description, transaction_type, operation_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO transaction (id, amount, currency, description, transaction_type, operation_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """;
         jdbcTemplate.update(sql,
                 transaction.id(),
                 transaction.amount(),
+                transaction.currency().name(),
                 transaction.description(),
                 transaction.transactionType().name(),
                 transaction.operationId(),

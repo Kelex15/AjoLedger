@@ -1,15 +1,20 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  banMember,
   cancelCircle,
   createCircle,
   fetchCircleMembers,
   fetchMyCircle,
+  fetchMyCircleHistory,
+  fetchOpenCircles,
   inviteToCircle,
   joinCircle,
+  leaveCircle,
   redeemInvite,
   removeMember,
   type Circle,
+  type CircleSizingPolicyType,
 } from '../api/circles'
 import { ApiError } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
@@ -30,14 +35,96 @@ export function CirclesPage() {
     },
   })
 
-  if (isLoading) {
-    return <p>Loading…</p>
+  return (
+    <div>
+      <h1>Circles</h1>
+      <MyCircleHistory />
+      {isLoading ? <p>Loading…</p> : circle ? <MyCircle circle={circle} /> : <NoCircle />}
+    </div>
+  )
+}
+
+function MyCircleHistory() {
+  const { data: history } = useQuery({
+    queryKey: queryKeys.myCircleHistory,
+    queryFn: fetchMyCircleHistory,
+  })
+
+  if (!history || history.length === 0) {
+    return null
   }
 
   return (
     <div>
-      <h1>Circles</h1>
-      {circle ? <MyCircle circle={circle} /> : <NoCircle />}
+      <h2>My circles</h2>
+      <ul>
+        {history.map((entry) => (
+          <li key={entry.circleId}>
+            {entry.circleName} — {entry.membershipStatus} (circle {entry.circleStatus})
+            {entry.position != null && `, position ${entry.position}`}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function BrowseCircles({ onJoined }: { onJoined: () => void }) {
+  const queryClient = useQueryClient()
+  const [joiningId, setJoiningId] = useState<string | null>(null)
+  const [joinError, setJoinError] = useState<string | null>(null)
+
+  const { data: openCircles } = useQuery({
+    queryKey: queryKeys.openCircles,
+    queryFn: fetchOpenCircles,
+  })
+
+  const joinMutation = useMutation({
+    mutationFn: joinCircle,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
+      queryClient.invalidateQueries({ queryKey: queryKeys.myCircleHistory })
+      queryClient.invalidateQueries({ queryKey: queryKeys.openCircles })
+      onJoined()
+    },
+  })
+
+  async function handleJoin(circleId: string) {
+    setJoinError(null)
+    setJoiningId(circleId)
+    try {
+      await joinMutation.mutateAsync(circleId)
+    } catch (err) {
+      setJoinError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setJoiningId(null)
+    }
+  }
+
+  return (
+    <div>
+      <h2>Browse circles</h2>
+      {(!openCircles || openCircles.length === 0) && <p>No circles to join right now.</p>}
+      {openCircles && openCircles.length > 0 && (
+        <ul>
+          {openCircles.map((openCircle) => (
+            <li key={openCircle.id}>
+              <strong>{openCircle.name}</strong> — {openCircle.description} ({openCircle.contributionAmount.toFixed(2)}
+              {' '}{openCircle.currency}/round, {openCircle.term}wk, {openCircle.maxMembers} members, collateral{' '}
+              {openCircle.collateral.toFixed(2)} {openCircle.currency})
+              {openCircle.gated && ' · invite-only'}
+              {openCircle.minReputationScore != null && ` · min reputation ${openCircle.minReputationScore}`}{' '}
+              <button
+                onClick={() => handleJoin(openCircle.id)}
+                disabled={joinMutation.isPending && joiningId === openCircle.id}
+              >
+                {joinMutation.isPending && joiningId === openCircle.id ? 'Joining…' : 'Join'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {joinError && <p role="alert">{joinError}</p>}
     </div>
   )
 }
@@ -45,9 +132,18 @@ export function CirclesPage() {
 function NoCircle() {
   const queryClient = useQueryClient()
 
+  function invalidateMembershipQueries() {
+    queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
+    queryClient.invalidateQueries({ queryKey: queryKeys.myCircleHistory })
+    queryClient.invalidateQueries({ queryKey: queryKeys.openCircles })
+  }
+
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [sizingPolicyType, setSizingPolicyType] = useState<CircleSizingPolicyType>('FIXED_SIZE')
   const [maxMembers, setMaxMembers] = useState('')
+  const [minMembers, setMinMembers] = useState('')
+  const [enrollmentDeadline, setEnrollmentDeadline] = useState('')
   const [term, setTerm] = useState('')
   const [contributionAmount, setContributionAmount] = useState('')
   const [gated, setGated] = useState(false)
@@ -55,7 +151,7 @@ function NoCircle() {
 
   const createMutation = useMutation({
     mutationFn: createCircle,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.myCircle }),
+    onSuccess: invalidateMembershipQueries,
   })
 
   async function handleCreate(event: FormEvent) {
@@ -65,10 +161,15 @@ function NoCircle() {
       await createMutation.mutateAsync({
         name,
         description,
+        sizingPolicyType,
         maxMembers: Number(maxMembers),
         term: Number(term),
         contributionAmount: Number(contributionAmount),
         gated,
+        ...(sizingPolicyType === 'OPEN_ENROLLMENT' && {
+          minMembers: minMembers ? Number(minMembers) : undefined,
+          enrollmentDeadline: new Date(enrollmentDeadline).toISOString(),
+        }),
       })
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
@@ -84,7 +185,7 @@ function NoCircle() {
     mutationFn: joinCircle,
     onSuccess: () => {
       setRedeemedCircle(null)
-      queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
+      invalidateMembershipQueries()
     },
   })
 
@@ -112,6 +213,8 @@ function NoCircle() {
     <div>
       <p>You're not in a circle yet.</p>
 
+      <BrowseCircles onJoined={() => setRedeemedCircle(null)} />
+
       <h2>Start a circle</h2>
       <form onSubmit={handleCreate}>
         <label>
@@ -125,7 +228,18 @@ function NoCircle() {
         </label>
 
         <label>
-          Members
+          Sizing
+          <select
+            value={sizingPolicyType}
+            onChange={(event) => setSizingPolicyType(event.target.value as CircleSizingPolicyType)}
+          >
+            <option value="FIXED_SIZE">Fixed size</option>
+            <option value="OPEN_ENROLLMENT">Open enrollment</option>
+          </select>
+        </label>
+
+        <label>
+          {sizingPolicyType === 'FIXED_SIZE' ? 'Members' : 'Max members'}
           <input
             type="number"
             min="2"
@@ -134,6 +248,30 @@ function NoCircle() {
             required
           />
         </label>
+
+        {sizingPolicyType === 'OPEN_ENROLLMENT' && (
+          <>
+            <label>
+              Min members (optional, defaults to 2)
+              <input
+                type="number"
+                min="2"
+                value={minMembers}
+                onChange={(event) => setMinMembers(event.target.value)}
+              />
+            </label>
+
+            <label>
+              Enrollment deadline
+              <input
+                type="datetime-local"
+                value={enrollmentDeadline}
+                onChange={(event) => setEnrollmentDeadline(event.target.value)}
+                required
+              />
+            </label>
+          </>
+        )}
 
         <label>
           Term (weeks)
@@ -207,12 +345,29 @@ function MyCircle({ circle }: { circle: Circle }) {
 
   const cancelMutation = useMutation({
     mutationFn: () => cancelCircle(circle.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.myCircle }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
+      queryClient.invalidateQueries({ queryKey: queryKeys.myCircleHistory })
+    },
   })
 
   const removeMutation = useMutation({
     mutationFn: (memberUserId: string) => removeMember(circle.id, memberUserId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: membersQueryKey }),
+  })
+
+  const banMutation = useMutation({
+    mutationFn: (memberUserId: string) => banMember(circle.id, memberUserId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: membersQueryKey }),
+  })
+
+  const leaveMutation = useMutation({
+    mutationFn: () => leaveCircle(circle.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
+      queryClient.invalidateQueries({ queryKey: queryKeys.myCircleHistory })
+      queryClient.invalidateQueries({ queryKey: queryKeys.openCircles })
+    },
   })
 
   async function handleCancel() {
@@ -228,6 +383,24 @@ function MyCircle({ circle }: { circle: Circle }) {
     setActionError(null)
     try {
       await removeMutation.mutateAsync(memberUserId)
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    }
+  }
+
+  async function handleBan(memberUserId: string) {
+    setActionError(null)
+    try {
+      await banMutation.mutateAsync(memberUserId)
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    }
+  }
+
+  async function handleLeave() {
+    setActionError(null)
+    try {
+      await leaveMutation.mutateAsync()
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
     }
@@ -263,7 +436,8 @@ function MyCircle({ circle }: { circle: Circle }) {
         <li>Status: {circle.status}</li>
         <li>Round: {circle.currentRound} of {circle.maxMembers}</li>
         <li>Term: {circle.term} week(s)</li>
-        <li>Contribution: {circle.contributionAmount.toFixed(2)}</li>
+        <li>Contribution: {circle.contributionAmount.toFixed(2)} {circle.currency}</li>
+        <li>Collateral held: {circle.collateral.toFixed(2)} {circle.currency}</li>
         <li>{circle.gated ? 'Invite-only' : 'Open'}</li>
       </ul>
 
@@ -278,6 +452,9 @@ function MyCircle({ circle }: { circle: Circle }) {
                 {' '}
                 <button onClick={() => handleRemove(member.userId)} disabled={removeMutation.isPending}>
                   Remove
+                </button>{' '}
+                <button onClick={() => handleBan(member.userId)} disabled={banMutation.isPending}>
+                  Ban
                 </button>
               </>
             )}
@@ -286,6 +463,12 @@ function MyCircle({ circle }: { circle: Circle }) {
       </ul>
 
       {actionError && <p role="alert">{actionError}</p>}
+
+      {!isCreator && circle.status === 'FORMING' && (
+        <button onClick={handleLeave} disabled={leaveMutation.isPending}>
+          {leaveMutation.isPending ? 'Leaving…' : 'Leave circle'}
+        </button>
+      )}
 
       {isCreator && circle.status === 'FORMING' && (
         <>

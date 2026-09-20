@@ -7,12 +7,11 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
 public record TransferRequestDTO(
     @NotNull(message = "Source account type is required") UserAccountType fromType,
 
-    @NotNull(message = "Recipient user id is required") UUID toUserId,
+    @NotBlank(message = "Recipient username is required") String toUsername,
 
     @NotNull(message = "Destination account type is required") UserAccountType toType,
 

@@ -561,7 +561,7 @@ class CircleServiceIntegrationTest {
     }
 
     @Test
-    void removeMemberRefundsAndFlipsToRemoved() {
+    void removeMemberRefundsAndDeletesMembership() {
         User creator = createFundedUser(new BigDecimal("110.00"));
         User member2 = createFundedUser(new BigDecimal("110.00"));
         BigDecimal member2SavingsBefore = accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS)
@@ -574,13 +574,31 @@ class CircleServiceIntegrationTest {
 
         circleService.removeMember(circle.getId(), creator.getId(), member2.getId());
 
-        CircleMembership membership = circleMembershipRepository
-                .findByCircle_IdAndUser_IdAndStatus(circle.getId(), member2.getId(), MembershipStatus.REMOVED)
-                .orElseThrow();
-        assertThat(membership.getStatus()).isEqualTo(MembershipStatus.REMOVED);
+        assertThat(circleMembershipRepository.existsByCircle_IdAndUser_Id(circle.getId(), member2.getId())).isFalse();
         // contribution refunded to SAVINGS; the join-time LIEN collateral stays put, same as dissolution.
         assertThat(accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
                 .isEqualByComparingTo(member2SavingsBefore.subtract(member2LienAfterJoin));
+    }
+
+    @Test
+    void removedMemberCanRejoinSameCircle() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+        circleService.joinCircle(member2.getId(), circle.getId());
+        circleService.removeMember(circle.getId(), creator.getId(), member2.getId());
+
+        // Removal only refunds the contribution; the join-time collateral stays locked in LIEN.
+        // With no active membership left, the withdrawal floor is 0, so it's fully reclaimable -
+        // withdraw it back to SAVINGS before rejoining, same as a real user would.
+        BigDecimal collateral = circleService.calculateJoinCollateral(circle);
+        circleService.postLienWithdrawal(member2.getId(), collateral, UUID.randomUUID().toString());
+
+        circleService.joinCircle(member2.getId(), circle.getId());
+
+        assertThat(circleMembershipRepository
+                .findByCircle_IdAndUser_IdAndStatus(circle.getId(), member2.getId(), MembershipStatus.ACTIVE))
+                .isPresent();
     }
 
     @Test
@@ -642,6 +660,198 @@ class CircleServiceIntegrationTest {
 
         assertThatThrownBy(() -> circleService.removeMember(circle.getId(), creator.getId(), outsider.getId()))
                 .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    @Test
+    void leaveCircleRefundsAndDeletesMembership() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+        BigDecimal member2SavingsBefore = accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+        circleService.joinCircle(member2.getId(), circle.getId());
+        BigDecimal member2LienAfterJoin = accountService.getUserAccount(member2.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+
+        circleService.leaveCircle(circle.getId(), member2.getId());
+
+        assertThat(circleMembershipRepository.existsByCircle_IdAndUser_Id(circle.getId(), member2.getId())).isFalse();
+        // contribution refunded to SAVINGS; the join-time LIEN collateral stays put, same as removeMember/dissolution.
+        assertThat(accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
+                .isEqualByComparingTo(member2SavingsBefore.subtract(member2LienAfterJoin));
+    }
+
+    @Test
+    void memberWhoLeftCanRejoinSameCircle() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+        circleService.joinCircle(member2.getId(), circle.getId());
+        circleService.leaveCircle(circle.getId(), member2.getId());
+
+        // Leaving only refunds the contribution; the join-time collateral stays locked in LIEN.
+        // With no active membership left, the withdrawal floor is 0, so it's fully reclaimable -
+        // withdraw it back to SAVINGS before rejoining, same as a real user would.
+        BigDecimal collateral = circleService.calculateJoinCollateral(circle);
+        circleService.postLienWithdrawal(member2.getId(), collateral, UUID.randomUUID().toString());
+
+        circleService.joinCircle(member2.getId(), circle.getId());
+
+        assertThat(circleMembershipRepository
+                .findByCircle_IdAndUser_IdAndStatus(circle.getId(), member2.getId(), MembershipStatus.ACTIVE))
+                .isPresent();
+    }
+
+    @Test
+    void leaveCircleFreesSlotForNewJoiner() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+        User member3 = createFundedUser(new BigDecimal("110.00"));
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+        circleService.joinCircle(member2.getId(), circle.getId());
+        circleService.leaveCircle(circle.getId(), member2.getId());
+        circleService.joinCircle(member3.getId(), circle.getId());
+
+        List<CircleMembership> active = circleMembershipRepository
+                .findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE);
+        assertThat(active).extracting(m -> m.getUser().getId())
+                .containsExactlyInAnyOrder(creator.getId(), member3.getId());
+        assertThat(circleRepository.findById(circle.getId()).orElseThrow().getStatus())
+                .isEqualTo(CircleStatus.FORMING);
+    }
+
+    @Test
+    void leaveCircleRejectsAfterLock() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(member2.getId(), circle.getId()); // fills, activates
+
+        assertThatThrownBy(() -> circleService.leaveCircle(circle.getId(), member2.getId()))
+                .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    @Test
+    void leaveCircleRejectsCreator() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+
+        assertThatThrownBy(() -> circleService.leaveCircle(circle.getId(), creator.getId()))
+                .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    @Test
+    void leaveCircleRejectsNonActiveMember() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User outsider = createFundedUser(new BigDecimal("110.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+
+        assertThatThrownBy(() -> circleService.leaveCircle(circle.getId(), outsider.getId()))
+                .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    @Test
+    void banMemberRefundsAndPersistsBannedStatus() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+        BigDecimal member2SavingsBefore = accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+        circleService.joinCircle(member2.getId(), circle.getId());
+        BigDecimal member2LienAfterJoin = accountService.getUserAccount(member2.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+
+        circleService.banMember(circle.getId(), creator.getId(), member2.getId());
+
+        // Unlike remove/leave, a ban is the one pre-lock exit meant to persist - that's what
+        // lets it block a future rejoin (see bannedMemberCannotRejoinSameCircle).
+        CircleMembership membership = circleMembershipRepository
+                .findByCircle_IdAndUser_IdAndStatus(circle.getId(), member2.getId(), MembershipStatus.BANNED)
+                .orElseThrow();
+        assertThat(membership.getStatus()).isEqualTo(MembershipStatus.BANNED);
+        assertThat(accountService.getUserAccount(member2.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance())
+                .isEqualByComparingTo(member2SavingsBefore.subtract(member2LienAfterJoin));
+    }
+
+    @Test
+    void bannedMemberCannotRejoinSameCircle() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+        circleService.joinCircle(member2.getId(), circle.getId());
+        circleService.banMember(circle.getId(), creator.getId(), member2.getId());
+
+        assertThatThrownBy(() -> circleService.joinCircle(member2.getId(), circle.getId()))
+                .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    @Test
+    void banMemberRejectsNonCreator() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+        User outsider = createFundedUser(new BigDecimal("110.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+        circleService.joinCircle(member2.getId(), circle.getId());
+
+        assertThatThrownBy(() -> circleService.banMember(circle.getId(), outsider.getId(), member2.getId()))
+                .isInstanceOf(CircleCreatorRequiredException.class);
+    }
+
+    @Test
+    void banMemberRejectsAfterLock() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User member2 = createFundedUser(new BigDecimal("110.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(member2.getId(), circle.getId()); // fills, activates
+
+        assertThatThrownBy(() -> circleService.banMember(circle.getId(), creator.getId(), member2.getId()))
+                .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    @Test
+    void banMemberRejectsBanningCreator() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+
+        assertThatThrownBy(() -> circleService.banMember(circle.getId(), creator.getId(), creator.getId()))
+                .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    @Test
+    void banMemberRejectsNonActiveMember() {
+        User creator = createFundedUser(new BigDecimal("110.00"));
+        User outsider = createFundedUser(new BigDecimal("110.00"));
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(3, false));
+
+        assertThatThrownBy(() -> circleService.banMember(circle.getId(), creator.getId(), outsider.getId()))
+                .isInstanceOf(CircleActionNotAllowedException.class);
+    }
+
+    @Test
+    void bannedDoesNotPenalizeReputationScore() {
+        User banned = createFundedUser(new BigDecimal("500.00"));
+        User pastCoMember = createFundedUser(new BigDecimal("500.00"));
+        Circle pastCircle = circleService.createCircle(pastCoMember.getId(), createRequest(3, false));
+        circleService.joinCircle(banned.getId(), pastCircle.getId());
+        circleService.banMember(pastCircle.getId(), pastCoMember.getId(), banned.getId());
+
+        // Withdraw the leftover join-time collateral so the comparison below isolates the
+        // penalizedFailures count, not an incidental LIEN-coverage difference - the withdrawal
+        // floor is 0 here since the ban drops the banned user's active membership count to zero.
+        BigDecimal leftoverCollateral = circleService.calculateJoinCollateral(pastCircle);
+        circleService.postLienWithdrawal(banned.getId(), leftoverCollateral, UUID.randomUUID().toString());
+
+        User freshUser = createFundedUser(new BigDecimal("500.00"));
+        User newCreator = createFundedUser(new BigDecimal("500.00"));
+        Circle newCircle = circleService.createCircle(newCreator.getId(), createRequest(3, false));
+        circleService.joinCircle(banned.getId(), newCircle.getId());
+        circleService.joinCircle(freshUser.getId(), newCircle.getId());
+
+        assertThat(circleService.computeReputationScore(newCircle, banned))
+                .isEqualTo(circleService.computeReputationScore(newCircle, freshUser));
     }
 
     @Test
@@ -1005,6 +1215,17 @@ class CircleServiceIntegrationTest {
     }
 
     @Test
+    void withdrawingMoreThanLienBalanceThrowsInsufficientBalanceNotFloorBlocked() {
+        User user = createFundedUser(new BigDecimal("500.00"));
+        BigDecimal lienBalance = accountService.getUserAccount(user.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance(); // zero, no circle joined yet
+        BigDecimal moreThanBalance = lienBalance.add(new BigDecimal("50.00"));
+
+        assertThatThrownBy(() -> circleService.postLienWithdrawal(user.getId(), moreThanBalance, UUID.randomUUID().toString()))
+                .isInstanceOf(InsufficientBalanceException.class);
+    }
+
+    @Test
     void formingCircleAllowsFullLienWithdrawalDespiteActiveMembership() {
         User creator = createFundedUser(new BigDecimal("500.00"));
         fundingService.postDeposit(creator.getId(), UserAccountType.LIEN, FundingType.STRIPE,
@@ -1032,6 +1253,26 @@ class CircleServiceIntegrationTest {
 
         assertThat(accountService.getUserAccount(user.getId(), UserAccountType.LIEN).orElseThrow().getBalance())
                 .isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void browsableCirclesExcludesOwnMembershipsAndNonFormingCircles() {
+        User joinableCreator = createFundedUser(new BigDecimal("500.00"));
+        User alreadyJoinedCreator = createFundedUser(new BigDecimal("500.00"));
+        User viewer = createFundedUser(new BigDecimal("500.00"));
+
+        Circle joinable = circleService.createCircle(joinableCreator.getId(), createRequest(3, false));
+        Circle alreadyJoined = circleService.createCircle(alreadyJoinedCreator.getId(), createRequest(3, false));
+        circleService.joinCircle(viewer.getId(), alreadyJoined.getId());
+
+        User lockedCreator = createFundedUser(new BigDecimal("500.00"));
+        Circle locked = circleService.createCircle(lockedCreator.getId(), createRequest(2, false));
+        circleService.joinCircle(createFundedUser(new BigDecimal("500.00")).getId(), locked.getId()); // fills, activates
+
+        List<Circle> browsable = circleService.getBrowsableCircles(viewer.getId());
+
+        assertThat(browsable).extracting(Circle::getId).contains(joinable.getId());
+        assertThat(browsable).extracting(Circle::getId).doesNotContain(alreadyJoined.getId(), locked.getId());
     }
 
     /** Pushes a circle's enrollmentDeadline into the past. Raw SQL, since the field is

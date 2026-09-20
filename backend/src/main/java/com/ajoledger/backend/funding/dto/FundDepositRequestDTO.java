@@ -1,6 +1,5 @@
 package com.ajoledger.backend.funding.dto;
 
-import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.funding.FundingType;
 
 import jakarta.validation.constraints.NotBlank;
@@ -10,8 +9,6 @@ import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 
 public record FundDepositRequestDTO(
-    @NotNull(message = "Target account type is required") UserAccountType targetType,
-
     @NotNull(message = "Funding type is required") FundingType fundingType,
 
     @NotNull(message = "Amount is required")

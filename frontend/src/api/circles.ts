@@ -7,6 +7,8 @@ export interface Circle {
   maxMembers: number
   term: number
   contributionAmount: number
+  collateral: number
+  currency: string
   currentRound: number
   status: string
   gated: boolean
@@ -34,23 +36,45 @@ export interface CircleMembership {
   joinedAt: string
 }
 
+export type CircleSizingPolicyType = 'FIXED_SIZE' | 'OPEN_ENROLLMENT'
+
 export interface CircleCreateFields {
   name: string
   description: string
+  sizingPolicyType: CircleSizingPolicyType
   maxMembers: number
+  minMembers?: number
+  enrollmentDeadline?: string
   term: number
   contributionAmount: number
   gated: boolean
+}
+
+export interface CircleHistoryEntry {
+  circleId: string
+  circleName: string
+  membershipStatus: string
+  circleStatus: string
+  position: number | null
+  joinedAt: string
 }
 
 export function fetchMyCircle() {
   return apiFetch<Circle>('/api/circles/me')
 }
 
+export function fetchMyCircleHistory() {
+  return apiFetch<CircleHistoryEntry[]>('/api/circles/mine')
+}
+
+export function fetchOpenCircles() {
+  return apiFetch<Circle[]>('/api/circles/open')
+}
+
 export function createCircle(fields: CircleCreateFields) {
   return apiFetch<Circle>('/api/circles', {
     method: 'POST',
-    body: JSON.stringify({ ...fields, sizingPolicyType: 'FIXED_SIZE' }),
+    body: JSON.stringify(fields),
   })
 }
 
@@ -78,5 +102,13 @@ export function fetchCircleMembers(circleId: string) {
 }
 
 export function removeMember(circleId: string, memberUserId: string) {
-  return apiFetch<CircleMembership>(`/api/circles/${circleId}/members/${memberUserId}/remove`, { method: 'POST' })
+  return apiFetch<void>(`/api/circles/${circleId}/members/${memberUserId}/remove`, { method: 'POST' })
+}
+
+export function banMember(circleId: string, memberUserId: string) {
+  return apiFetch<void>(`/api/circles/${circleId}/members/${memberUserId}/ban`, { method: 'POST' })
+}
+
+export function leaveCircle(circleId: string) {
+  return apiFetch<void>(`/api/circles/${circleId}/leave`, { method: 'POST' })
 }

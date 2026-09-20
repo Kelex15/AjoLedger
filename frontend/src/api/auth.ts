@@ -19,6 +19,13 @@ export function login(email: string, password: string) {
   })
 }
 
+export function loginWithGoogle(idToken: string) {
+  return apiFetch<{ message: string }>('/api/auth/google', {
+    method: 'POST',
+    body: JSON.stringify({ idToken }),
+  })
+}
+
 export interface SignupFields {
   username: string
   firstName: string

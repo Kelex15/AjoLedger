@@ -2,9 +2,10 @@ import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { GoogleSignInButton } from '../components/GoogleSignInButton'
 
 export function LoginPage() {
-  const { user, login } = useAuth()
+  const { user, login, loginWithGoogle } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -32,39 +33,54 @@ export function LoginPage() {
     }
   }
 
+  async function handleGoogleCredential(idToken: string) {
+    setError(null)
+    try {
+      await loginWithGoogle(idToken)
+      navigate('/', { replace: true })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    }
+  }
+
   return (
-    <form onSubmit={handleSubmit}>
-      <h1>Log in</h1>
+    <div>
+      <form onSubmit={handleSubmit}>
+        <h1>Log in</h1>
 
-      <label>
-        Email
-        <input
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          required
-        />
-      </label>
+        <label>
+          Email
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
+        </label>
 
-      <label>
-        Password
-        <input
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-        />
-      </label>
+        <label>
+          Password
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+        </label>
 
-      {error && <p role="alert">{error}</p>}
+        {error && <p role="alert">{error}</p>}
 
-      <button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? 'Logging in…' : 'Log in'}
-      </button>
+        <button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? 'Logging in…' : 'Log in'}
+        </button>
 
-      <p>
-        Don't have an account? <Link to="/signup">Sign up</Link>
-      </p>
-    </form>
+        <p>
+          Don't have an account? <Link to="/signup">Sign up</Link>
+        </p>
+      </form>
+
+      <p>or</p>
+      <GoogleSignInButton onCredential={handleGoogleCredential} />
+    </div>
   )
 }

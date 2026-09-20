@@ -1,5 +1,6 @@
 package com.ajoledger.backend.ledger.dto;
 
+import com.ajoledger.backend.account.Currency;
 import com.ajoledger.backend.ledger.LedgerEntry;
 import com.ajoledger.backend.ledger.LedgerTransaction;
 
@@ -11,6 +12,7 @@ import java.util.UUID;
 public record LedgerTransactionResponseDTO(
     UUID id,
     BigDecimal amount,
+    Currency currency,
     String description,
     String transactionType,
     UUID operationId,
@@ -27,6 +29,7 @@ public record LedgerTransactionResponseDTO(
         return new LedgerTransactionResponseDTO(
                 transaction.id(),
                 transaction.amount(),
+                transaction.currency(),
                 transaction.description(),
                 transaction.transactionType().name(),
                 transaction.operationId(),

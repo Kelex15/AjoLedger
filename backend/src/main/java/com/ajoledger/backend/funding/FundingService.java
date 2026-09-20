@@ -32,7 +32,7 @@ public class FundingService {
                 new Leg(clearing.getId(), amount, BigDecimal.ZERO),
                 new Leg(target.getId(), BigDecimal.ZERO, amount));
         return ledgerService.postLedgerTransaction(idempotencyKey, "DEPOSIT", LedgerTransactionType.DEPOSIT, amount,
-                "Deposit via " + source, legs);
+                target.getCurrency(), "Deposit via " + source, legs);
     }
 
     public LedgerTransaction postWithdrawal(UUID userId, UserAccountType sourceType, FundingType destination,
@@ -44,7 +44,7 @@ public class FundingService {
                 new Leg(source.getId(), amount, BigDecimal.ZERO),
                 new Leg(clearing.getId(), BigDecimal.ZERO, amount));
         return ledgerService.postLedgerTransaction(idempotencyKey, "WITHDRAWAL", LedgerTransactionType.WITHDRAWAL, amount,
-                "Withdrawal to " + destination, legs);
+                source.getCurrency(), "Withdrawal to " + destination, legs);
     }
 
     private UserAccountType clearingAccountType(FundingType source) {

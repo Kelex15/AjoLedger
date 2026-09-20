@@ -14,7 +14,16 @@ function readCookie(name: string): string | null {
   return match ? decodeURIComponent(match[1]) : null
 }
 
-export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+const REFRESH_EXEMPT_PATHS = new Set([
+  '/api/auth/login',
+  '/api/auth/signup',
+  '/api/auth/google',
+  '/api/auth/refresh',
+  '/api/auth/logout',
+  '/api/auth/verify-email',
+])
+
+function rawFetch(path: string, options: RequestInit): Promise<Response> {
   const method = (options.method ?? 'GET').toUpperCase()
   const headers = new Headers(options.headers)
 
@@ -31,12 +40,40 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     }
   }
 
-  const response = await fetch(`${env.apiBaseUrl}${path}`, {
-    ...options,
-    method,
-    headers,
-    credentials: 'include',
-  })
+  return fetch(`${env.apiBaseUrl}${path}`, { ...options, method, headers, credentials: 'include' })
+}
+
+// Shared across concurrent callers so several requests failing around the same moment (e.g. a
+// page firing multiple queries at once when the access token expires) trigger exactly one
+// refresh, not one per request.
+let refreshPromise: Promise<boolean> | null = null
+
+function refreshAccessToken(): Promise<boolean> {
+  if (!refreshPromise) {
+    // Goes through rawFetch, not a bare fetch - /api/auth/refresh isn't CSRF-exempt on the
+    // backend, so it needs the same X-XSRF-TOKEN header every other mutating request gets.
+    refreshPromise = rawFetch('/api/auth/refresh', { method: 'POST' })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null
+      })
+  }
+  return refreshPromise
+}
+
+export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  let response = await rawFetch(path, options)
+
+  // The access token is short-lived (15 min) by design; a 401 here almost always just means it
+  // expired mid-session, not that the user is actually logged out. Silently refresh and retry
+  // once before giving up.
+  if (response.status === 401 && !REFRESH_EXEMPT_PATHS.has(path)) {
+    const refreshed = await refreshAccessToken()
+    if (refreshed) {
+      response = await rawFetch(path, options)
+    }
+  }
 
   if (!response.ok) {
     const body = await response.json().catch(() => null)

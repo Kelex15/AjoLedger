@@ -7,4 +7,5 @@ import java.util.UUID;
 public interface CircleRepository extends JpaRepository<Circle, UUID> {
     List<Circle> findByStatusAndLastRoundAtIsNotNull(CircleStatus status);
     List<Circle> findByStatusAndEnrollmentDeadlineIsNotNull(CircleStatus status);
+    List<Circle> findByStatus(CircleStatus status);
 }

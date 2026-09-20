@@ -30,8 +30,10 @@ import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.ledger.exception.IdempotencyKeyConflictException;
+import com.ajoledger.backend.ledger.exception.InvalidTransferTargetException;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
+import com.ajoledger.backend.user.exception.UserNotFoundException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -185,6 +187,55 @@ class LedgerIntegrationTest {
     }
 
     @Test
+    void transferToSelfAllowsAnyDestinationAccountType() {
+        User user = createUser();
+        UserAccount savings = createFundedAccount(user, UserAccountType.SAVINGS, new BigDecimal("50.00"));
+        UserAccount lien = accountService.createUserAccount(user, UserAccountType.LIEN);
+
+        ledgerService.postTransferToUser(user.getId(), UserAccountType.SAVINGS, user.getUsername(),
+                UserAccountType.LIEN, new BigDecimal("20.00"), UUID.randomUUID().toString());
+
+        assertBalance(savings.getId(), "30.00");
+        assertBalance(lien.getId(), "20.00");
+    }
+
+    @Test
+    void transferToAnotherUserRejectsNonCheckingDestination() {
+        User payer = createUser();
+        User recipient = createUser();
+        createFundedAccount(payer, UserAccountType.SAVINGS, new BigDecimal("50.00"));
+        accountService.createUserAccount(recipient, UserAccountType.SAVINGS);
+
+        assertThatThrownBy(() -> ledgerService.postTransferToUser(payer.getId(), UserAccountType.SAVINGS,
+                recipient.getUsername(), UserAccountType.SAVINGS, new BigDecimal("10.00"), UUID.randomUUID().toString()))
+                .isInstanceOf(InvalidTransferTargetException.class);
+    }
+
+    @Test
+    void transferToAnotherUserAllowsCheckingDestination() {
+        User payer = createUser();
+        User recipient = createUser();
+        UserAccount payerSavings = createFundedAccount(payer, UserAccountType.SAVINGS, new BigDecimal("50.00"));
+        UserAccount recipientChecking = accountService.createUserAccount(recipient, UserAccountType.CHECKING);
+
+        ledgerService.postTransferToUser(payer.getId(), UserAccountType.SAVINGS, recipient.getUsername(),
+                UserAccountType.CHECKING, new BigDecimal("10.00"), UUID.randomUUID().toString());
+
+        assertBalance(payerSavings.getId(), "40.00");
+        assertBalance(recipientChecking.getId(), "10.00");
+    }
+
+    @Test
+    void transferToUnknownUsernameThrowsUserNotFound() {
+        User payer = createUser();
+        createFundedAccount(payer, UserAccountType.SAVINGS, new BigDecimal("50.00"));
+
+        assertThatThrownBy(() -> ledgerService.postTransferToUser(payer.getId(), UserAccountType.SAVINGS,
+                "no-such-user", UserAccountType.CHECKING, new BigDecimal("10.00"), UUID.randomUUID().toString()))
+                .isInstanceOf(UserNotFoundException.class);
+    }
+
+    @Test
     void insufficientBalanceLeavesLedgerUntouched() {
         User payer = createUser();
         User recipient = createUser();
@@ -209,8 +260,8 @@ class LedgerIntegrationTest {
 
         assertThatThrownBy(() -> transactionTemplate.execute(status -> {
             jdbcTemplate.update(
-                    "INSERT INTO transaction (id, amount, description, transaction_type, created_at) VALUES (?, ?, ?, ?, ?)",
-                    transactionId, new BigDecimal("100.00"), "unbalanced test", "TRANSFER", Timestamp.from(Instant.now()));
+                    "INSERT INTO transaction (id, amount, currency, description, transaction_type, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    transactionId, new BigDecimal("100.00"), "USD", "unbalanced test", "TRANSFER", Timestamp.from(Instant.now()));
             // debit 100, credit only 50 - does not net to zero
             jdbcTemplate.update(
                     "INSERT INTO ledger_entry (id, account_id, debit_amount, credit_amount, transaction_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -230,8 +281,8 @@ class LedgerIntegrationTest {
 
         transactionTemplate.execute(status -> {
             jdbcTemplate.update(
-                    "INSERT INTO transaction (id, amount, description, transaction_type, created_at) VALUES (?, ?, ?, ?, ?)",
-                    transactionId, new BigDecimal("10.00"), "append-only test", "TRANSFER", Timestamp.from(Instant.now()));
+                    "INSERT INTO transaction (id, amount, currency, description, transaction_type, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    transactionId, new BigDecimal("10.00"), "USD", "append-only test", "TRANSFER", Timestamp.from(Instant.now()));
             jdbcTemplate.update(
                     "INSERT INTO ledger_entry (id, account_id, debit_amount, credit_amount, transaction_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                     UUID.randomUUID(), account.getId(), new BigDecimal("10.00"), BigDecimal.ZERO, transactionId, Timestamp.from(Instant.now()));

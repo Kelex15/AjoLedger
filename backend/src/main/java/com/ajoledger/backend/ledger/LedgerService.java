@@ -1,15 +1,22 @@
 package com.ajoledger.backend.ledger;
 
+import com.ajoledger.backend.account.Currency;
 import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.account.entity.UserAccount;
 import com.ajoledger.backend.account.exception.AccountNotFoundException;
 import com.ajoledger.backend.account.repository.UserAccountRepository;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.ledger.exception.IdempotencyKeyConflictException;
+import com.ajoledger.backend.ledger.exception.InvalidTransferTargetException;
 import com.ajoledger.backend.ledger.idempotency.IdempotencyDao;
 import com.ajoledger.backend.ledger.idempotency.IdempotencyRecord;
+import com.ajoledger.backend.user.User;
+import com.ajoledger.backend.user.UserRepository;
+import com.ajoledger.backend.user.exception.UserNotFoundException;
 
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -31,12 +38,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class LedgerService {
 
+    private static final Logger log = LoggerFactory.getLogger(LedgerService.class);
+
     private final TransactionTemplate transactionTemplate;
     private final LedgerDao ledgerDao;
     private final LedgerTransactionDao ledgerTransactionDao;
     private final LedgerOperationDao ledgerOperationDao;
     private final IdempotencyDao idempotencyDao;
     private final UserAccountRepository userAccountRepository;
+    private final UserRepository userRepository;
 
     public LedgerTransaction postTransfer(UUID fromUserId, UserAccountType fromType, UUID toUserId, UserAccountType toType,
                                            BigDecimal amount, String idempotencyKey) {
@@ -45,7 +55,19 @@ public class LedgerService {
         List<Leg> legs = List.of(
                 new Leg(from.getId(), amount, BigDecimal.ZERO),
                 new Leg(to.getId(), BigDecimal.ZERO, amount));
-        return postLedgerTransaction(idempotencyKey, "TRANSFER", LedgerTransactionType.TRANSFER, amount, "Transfer", legs);
+        return postLedgerTransaction(idempotencyKey, "TRANSFER", LedgerTransactionType.TRANSFER, amount,
+                from.getCurrency(), "Transfer", legs);
+    }
+
+    public LedgerTransaction postTransferToUser(UUID fromUserId, UserAccountType fromType, String toUsername,
+                                                 UserAccountType toType, BigDecimal amount, String idempotencyKey) {
+        User recipient = userRepository.findByUsername(toUsername)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + toUsername));
+        UUID toUserId = recipient.getId();
+        if (!fromUserId.equals(toUserId) && toType != UserAccountType.CHECKING) {
+            throw new InvalidTransferTargetException("Transfers to another user can only land in their CHECKING account");
+        }
+        return postTransfer(fromUserId, fromType, toUserId, toType, amount, idempotencyKey);
     }
 
     /** Empty both when the transaction doesn't exist and when it exists but the user wasn't a
@@ -74,12 +96,12 @@ public class LedgerService {
 
     /** Shared by every domain's money-moving service, not just this one. */
     public LedgerTransaction postLedgerTransaction(String idempotencyKey, String requestType, LedgerTransactionType type,
-                                                    BigDecimal amount, String description, List<Leg> legs) {
-        return postLedgerTransaction(idempotencyKey, requestType, type, amount, description, legs, null);
+                                                    BigDecimal amount, Currency currency, String description, List<Leg> legs) {
+        return postLedgerTransaction(idempotencyKey, requestType, type, amount, currency, description, legs, null);
     }
 
     public LedgerTransaction postLedgerTransaction(String idempotencyKey, String requestType, LedgerTransactionType type,
-                                                    BigDecimal amount, String description, List<Leg> legs,
+                                                    BigDecimal amount, Currency currency, String description, List<Leg> legs,
                                                     UUID operationId) {
         String requestHash = hashRequest(requestType, legs);
         UUID idempotencyId = UUID.randomUUID();
@@ -98,7 +120,7 @@ public class LedgerService {
                 return null;
             }
 
-            LedgerTransaction transaction = insertTransaction(amount, description, type, operationId);
+            LedgerTransaction transaction = insertTransaction(amount, currency, description, type, operationId);
             insertLegs(transaction, legs);
             applyBalanceChanges(legs);
             idempotencyDao.markSucceeded(idempotencyId, transaction.id());
@@ -118,7 +140,13 @@ public class LedgerService {
             return null;
         }
         return switch (record.status()) {
-            case SUCCEEDED -> ledgerTransactionDao.findById(record.transactionId()).orElseThrow();
+            case SUCCEEDED -> {
+                log.warn("Idempotency key {} already succeeded as transaction {} - returning the cached result " +
+                                "instead of moving money again. If this wasn't a genuine retry of the same request, " +
+                                "the caller is reusing a key across two different real events.",
+                        idempotencyKey, record.transactionId());
+                yield ledgerTransactionDao.findById(record.transactionId()).orElseThrow();
+            }
             case IN_PROGRESS, FAILED -> {
                 failure.set(new IdempotencyKeyConflictException("Idempotency key already used: " + idempotencyKey));
                 yield null;
@@ -147,8 +175,9 @@ public class LedgerService {
         });
     }
 
-    private LedgerTransaction insertTransaction(BigDecimal amount, String description, LedgerTransactionType type, UUID operationId) {
-        LedgerTransaction transaction = new LedgerTransaction(UUID.randomUUID(), amount, description, type, operationId, Instant.now());
+    private LedgerTransaction insertTransaction(BigDecimal amount, Currency currency, String description,
+                                                 LedgerTransactionType type, UUID operationId) {
+        LedgerTransaction transaction = new LedgerTransaction(UUID.randomUUID(), amount, currency, description, type, operationId, Instant.now());
         ledgerTransactionDao.insertTransaction(transaction);
         return transaction;
     }

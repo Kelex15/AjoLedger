@@ -6,5 +6,7 @@ public enum MembershipStatus {
     DEFAULTED,  // stopped contributing after receiving payout. Triggers the default waterfall.
     DISSOLVED,  // the circle failed to form or was cancelled. Not the member's doing, refunded in full.
     COMPLETED,  // every round paid out successfully.
-    REMOVED     // the creator removed them before lock. Not their own doing, refunded in full.
+    BANNED      // creator-initiated, before lock, made permanent: refunded in full, but blocks rejoining
+                // this circle. A plain removal or self-leave before lock instead deletes the row outright,
+                // since nothing persists there worth tracking - this is the one pre-lock exit meant to persist.
 }

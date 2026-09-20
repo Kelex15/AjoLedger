@@ -48,8 +48,8 @@ public class LedgerController {
     @PostMapping(path = "/transfer", version = "1")
     public ResponseEntity<LedgerTransactionResponseDTO> transfer(@AuthenticationPrincipal UUID currentUserId,
                                                                    @Valid @RequestBody TransferRequestDTO dto) {
-        LedgerTransaction transaction = ledgerService.postTransfer(
-                currentUserId, dto.fromType(), dto.toUserId(), dto.toType(),
+        LedgerTransaction transaction = ledgerService.postTransferToUser(
+                currentUserId, dto.fromType(), dto.toUsername(), dto.toType(),
                 dto.amount(), dto.idempotencyKey());
         List<LedgerEntry> legs = ledgerService.getLegs(transaction.id());
         return ResponseEntity.status(HttpStatus.CREATED).body(LedgerTransactionResponseDTO.fromTransaction(transaction, legs));

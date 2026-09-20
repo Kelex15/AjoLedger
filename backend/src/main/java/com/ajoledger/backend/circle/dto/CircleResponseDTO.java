@@ -1,5 +1,6 @@
 package com.ajoledger.backend.circle.dto;
 
+import com.ajoledger.backend.account.Currency;
 import com.ajoledger.backend.circle.Circle;
 
 import java.math.BigDecimal;
@@ -13,6 +14,8 @@ public record CircleResponseDTO(
     int maxMembers,
     int term,
     BigDecimal contributionAmount,
+    BigDecimal collateral,
+    Currency currency,
     int currentRound,
     String status,
     boolean gated,
@@ -21,7 +24,7 @@ public record CircleResponseDTO(
     Instant createdAt
 ) {
 
-    public static CircleResponseDTO fromCircle(Circle circle) {
+    public static CircleResponseDTO fromCircle(Circle circle, BigDecimal collateral, Currency currency) {
         return new CircleResponseDTO(
                 circle.getId(),
                 circle.getName(),
@@ -29,6 +32,8 @@ public record CircleResponseDTO(
                 circle.getMaxMembers(),
                 circle.getTerm(),
                 circle.getContributionAmount(),
+                collateral,
+                currency,
                 circle.getCurrentRound(),
                 circle.getStatus().name(),
                 circle.isGated(),

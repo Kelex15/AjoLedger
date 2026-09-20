@@ -17,7 +17,6 @@ export function DashboardPage() {
     queryFn: fetchMyAccounts,
   })
 
-  const [targetType, setTargetType] = useState<UserAccountType>('CHECKING')
   const [fundingType, setFundingType] = useState<FundingType>('STRIPE')
   const [amount, setAmount] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -34,13 +33,12 @@ export function DashboardPage() {
     event.preventDefault()
     setError(null)
     try {
-      await depositMutation.mutateAsync({ targetType, fundingType, amount: Number(amount) })
+      await depositMutation.mutateAsync({ fundingType, amount: Number(amount) })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
     }
   }
 
-  const [sourceType, setSourceType] = useState<UserAccountType>('CHECKING')
   const [withdrawFundingType, setWithdrawFundingType] = useState<FundingType>('STRIPE')
   const [withdrawAmount, setWithdrawAmount] = useState('')
   const [withdrawError, setWithdrawError] = useState<string | null>(null)
@@ -57,15 +55,16 @@ export function DashboardPage() {
     event.preventDefault()
     setWithdrawError(null)
     try {
-      await withdrawMutation.mutateAsync({ sourceType, fundingType: withdrawFundingType, amount: Number(withdrawAmount) })
+      await withdrawMutation.mutateAsync({ fundingType: withdrawFundingType, amount: Number(withdrawAmount) })
     } catch (err) {
       setWithdrawError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
     }
   }
 
   const [transferFromType, setTransferFromType] = useState<UserAccountType>('CHECKING')
-  const [transferToUserId, setTransferToUserId] = useState('')
-  const [transferToType, setTransferToType] = useState<UserAccountType>('CHECKING')
+  const [transferToAnotherUser, setTransferToAnotherUser] = useState(false)
+  const [transferToUsername, setTransferToUsername] = useState('')
+  const [transferToType, setTransferToType] = useState<UserAccountType>('SAVINGS')
   const [transferAmount, setTransferAmount] = useState('')
   const [transferError, setTransferError] = useState<string | null>(null)
 
@@ -83,8 +82,9 @@ export function DashboardPage() {
     try {
       await transferMutation.mutateAsync({
         fromType: transferFromType,
-        toUserId: transferToUserId,
-        toType: transferToType,
+        toUsername: transferToAnotherUser ? transferToUsername : user!.username,
+        // Transfers to another user can only land in their Checking account.
+        toType: transferToAnotherUser ? 'CHECKING' : transferToType,
         amount: Number(transferAmount),
       })
     } catch (err) {
@@ -151,16 +151,8 @@ export function DashboardPage() {
       )}
 
       <h2>Deposit funds</h2>
+      <p>Deposits always land in Checking.</p>
       <form onSubmit={handleDeposit}>
-        <label>
-          To account
-          <select value={targetType} onChange={(event) => setTargetType(event.target.value as UserAccountType)}>
-            <option value="CHECKING">Checking</option>
-            <option value="SAVINGS">Savings</option>
-            <option value="LIEN">Lien</option>
-          </select>
-        </label>
-
         <label>
           Via
           <select value={fundingType} onChange={(event) => setFundingType(event.target.value as FundingType)}>
@@ -189,16 +181,8 @@ export function DashboardPage() {
       </form>
 
       <h2>Withdraw funds</h2>
+      <p>Withdrawals always draw from Checking.</p>
       <form onSubmit={handleWithdraw}>
-        <label>
-          From account
-          <select value={sourceType} onChange={(event) => setSourceType(event.target.value as UserAccountType)}>
-            <option value="CHECKING">Checking</option>
-            <option value="SAVINGS">Savings</option>
-            <option value="LIEN">Lien</option>
-          </select>
-        </label>
-
         <label>
           Via
           <select
@@ -244,18 +228,36 @@ export function DashboardPage() {
         </label>
 
         <label>
-          To user id
-          <input value={transferToUserId} onChange={(event) => setTransferToUserId(event.target.value)} required />
+          <input
+            type="checkbox"
+            checked={transferToAnotherUser}
+            onChange={(event) => setTransferToAnotherUser(event.target.checked)}
+          />
+          Send to another user
         </label>
 
-        <label>
-          To account
-          <select value={transferToType} onChange={(event) => setTransferToType(event.target.value as UserAccountType)}>
-            <option value="CHECKING">Checking</option>
-            <option value="SAVINGS">Savings</option>
-            <option value="LIEN">Lien</option>
-          </select>
-        </label>
+        {transferToAnotherUser ? (
+          <>
+            <label>
+              Username
+              <input
+                value={transferToUsername}
+                onChange={(event) => setTransferToUsername(event.target.value)}
+                required
+              />
+            </label>
+            <p>Lands in their Checking account.</p>
+          </>
+        ) : (
+          <label>
+            To account
+            <select value={transferToType} onChange={(event) => setTransferToType(event.target.value as UserAccountType)}>
+              <option value="CHECKING">Checking</option>
+              <option value="SAVINGS">Savings</option>
+              <option value="LIEN">Lien</option>
+            </select>
+          </label>
+        )}
 
         <label>
           Amount

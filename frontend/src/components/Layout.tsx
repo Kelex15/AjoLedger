@@ -10,8 +10,8 @@ export function Layout() {
         <NavLink to="/" end>
           Dashboard
         </NavLink>{' '}
-        <NavLink to="/profile">Profile</NavLink>{' '}
         <NavLink to="/circles">Circles</NavLink>{' '}
+        <NavLink to="/profile">Profile</NavLink>{' '}
         <button onClick={() => logout()}>Log out</button>
       </nav>
       <hr />

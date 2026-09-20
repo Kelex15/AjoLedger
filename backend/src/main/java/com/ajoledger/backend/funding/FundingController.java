@@ -1,5 +1,6 @@
 package com.ajoledger.backend.funding;
 
+import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.funding.dto.FundDepositRequestDTO;
 import com.ajoledger.backend.funding.dto.FundWithdrawalRequestDTO;
 import com.ajoledger.backend.funding.dto.FundingTransactionResponseDTO;
@@ -32,7 +33,7 @@ public class FundingController {
     public ResponseEntity<FundingTransactionResponseDTO> deposit(@AuthenticationPrincipal UUID currentUserId,
                                                             @Valid @RequestBody FundDepositRequestDTO dto) {
         LedgerTransaction transaction = fundingService.postDeposit(
-                currentUserId, dto.targetType(), dto.fundingType(), dto.amount(), dto.idempotencyKey());
+                currentUserId, UserAccountType.CHECKING, dto.fundingType(), dto.amount(), dto.idempotencyKey());
         return ResponseEntity.status(HttpStatus.CREATED).body(FundingTransactionResponseDTO.fromTransaction(transaction));
     }
 
@@ -40,7 +41,7 @@ public class FundingController {
     public ResponseEntity<FundingTransactionResponseDTO> withdraw(@AuthenticationPrincipal UUID currentUserId,
                                                             @Valid @RequestBody FundWithdrawalRequestDTO dto) {
         LedgerTransaction transaction = fundingService.postWithdrawal(
-                currentUserId, dto.sourceType(), dto.fundingType(), dto.amount(), dto.idempotencyKey());
+                currentUserId, UserAccountType.CHECKING, dto.fundingType(), dto.amount(), dto.idempotencyKey());
         return ResponseEntity.status(HttpStatus.CREATED).body(FundingTransactionResponseDTO.fromTransaction(transaction));
     }
 }

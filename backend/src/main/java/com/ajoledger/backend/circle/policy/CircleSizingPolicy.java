@@ -30,6 +30,10 @@ public abstract class CircleSizingPolicy {
         if (circle.getStatus() != CircleStatus.FORMING || !hasEnrollmentRoom(circle)) {
             return false;
         }
+        if (circleMembershipRepository.existsByCircle_IdAndUser_IdAndStatus(
+                circle.getId(), candidate.getId(), MembershipStatus.BANNED)) {
+            return false;
+        }
         boolean isCreator = circle.getCreatedBy().getId().equals(candidate.getId());
         if (circle.isGated() && !isCreator) {
             return circleInviteRepository.existsByCircle_IdAndInvitedUser_IdAndRedeemedAtIsNotNull(

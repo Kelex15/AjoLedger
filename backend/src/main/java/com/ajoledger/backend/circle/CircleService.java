@@ -201,10 +201,13 @@ public class CircleService {
                 .build());
 
         CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
+        // Keyed by this membership row's own id, not circleId:userId - a user can now rejoin a
+        // circle they've previously left/been removed from, and a static key would collide with
+        // the earlier cycle's already-succeeded idempotency record, silently skipping the debit.
         postContribution(userId, circleId, pot.getId(), circle.getContributionAmount(),
-                circleId + ":" + userId + ":join");
-        BigDecimal collateral = roundAmount(resolveSizingPolicy(circle).calculateJoinCollateral(circle));
-        postLienHold(userId, collateral, circleId + ":" + userId + ":join-collateral");
+                membership.getId() + ":join");
+        BigDecimal collateral = calculateJoinCollateral(circle);
+        postLienHold(userId, collateral, membership.getId() + ":join-collateral");
         membership.setLastContributedRound(circle.getCurrentRound());
         circleMembershipRepository.save(membership);
 
@@ -293,7 +296,7 @@ public class CircleService {
                 new Leg(savings.getId(), amount, BigDecimal.ZERO),
                 new Leg(circlePotAccountId, BigDecimal.ZERO, amount));
         return ledgerService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION", LedgerTransactionType.CONTRIBUTION,
-                amount, "Contribution to circle " + circleId, legs);
+                amount, savings.getCurrency(), "Contribution to circle " + circleId, legs);
     }
 
     /** Exact inverse of postContribution's legs. */
@@ -304,7 +307,8 @@ public class CircleService {
                 new Leg(circlePotAccountId, amount, BigDecimal.ZERO),
                 new Leg(savings.getId(), BigDecimal.ZERO, amount));
         return ledgerService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION_REFUND",
-                LedgerTransactionType.CONTRIBUTION_REFUND, amount, "Contribution refund for circle " + circleId, legs);
+                LedgerTransactionType.CONTRIBUTION_REFUND, amount, savings.getCurrency(),
+                "Contribution refund for circle " + circleId, legs);
     }
 
     public LedgerTransaction postPayout(UUID circlePotAccountId, UUID circlePayoutId, UUID recipientUserId,
@@ -326,18 +330,20 @@ public class CircleService {
             circlePayoutRepository.saveAndFlush(payout);
 
             LedgerTransaction main = ledgerService.postLedgerTransaction(idempotencyKey, "PAYOUT", LedgerTransactionType.PAYOUT,
-                    net, "Payout for circle payout " + circlePayoutId,
+                    net, savings.getCurrency(), "Payout for circle payout " + circlePayoutId,
                     List.of(new Leg(circlePotAccountId, net, BigDecimal.ZERO), new Leg(savings.getId(), BigDecimal.ZERO, net)),
                     operationId);
 
             ledgerService.postLedgerTransaction(idempotencyKey + ":buffer-fee", "PAYOUT_BUFFER_FEE",
-                    LedgerTransactionType.PAYOUT_BUFFER_FEE, bufferFee, "Buffer fee for circle payout " + circlePayoutId,
+                    LedgerTransactionType.PAYOUT_BUFFER_FEE, bufferFee, buffer.getCurrency(),
+                    "Buffer fee for circle payout " + circlePayoutId,
                     List.of(new Leg(circlePotAccountId, bufferFee, BigDecimal.ZERO), new Leg(buffer.getId(), BigDecimal.ZERO, bufferFee)),
                     operationId);
 
             if (lienShare.signum() > 0) {
                 ledgerService.postLedgerTransaction(idempotencyKey + ":lien-skim", "PAYOUT_LIEN_SKIM",
-                        LedgerTransactionType.PAYOUT_LIEN_SKIM, lienShare, "Lien skim for circle payout " + circlePayoutId,
+                        LedgerTransactionType.PAYOUT_LIEN_SKIM, lienShare, lien.getCurrency(),
+                        "Lien skim for circle payout " + circlePayoutId,
                         List.of(new Leg(circlePotAccountId, lienShare, BigDecimal.ZERO), new Leg(lien.getId(), BigDecimal.ZERO, lienShare)),
                         operationId);
             }
@@ -353,12 +359,16 @@ public class CircleService {
                 new Leg(savings.getId(), amount, BigDecimal.ZERO),
                 new Leg(lien.getId(), BigDecimal.ZERO, amount));
         return ledgerService.postLedgerTransaction(idempotencyKey, "LIEN_HOLD", LedgerTransactionType.LIEN_HOLD,
-                amount, "Lien top-up", legs);
+                amount, lien.getCurrency(), "Lien top-up", legs);
     }
 
     public LedgerTransaction postLienWithdrawal(UUID userId, BigDecimal amount, String idempotencyKey) {
         UserAccount lien = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.LIEN);
-        if (ledgerDao.getBalance(lien.getId()).subtract(amount).compareTo(computeLienWithdrawalFloor(userId)) < 0) {
+        BigDecimal lienBalance = ledgerDao.getBalance(lien.getId());
+        if (lienBalance.compareTo(amount) < 0) {
+            throw new InsufficientBalanceException("Insufficient LIEN balance for withdrawal");
+        }
+        if (lienBalance.subtract(amount).compareTo(computeLienWithdrawalFloor(userId)) < 0) {
             throw new LienWithdrawalBlockedException("Withdrawal would drop LIEN below the required floor");
         }
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
@@ -366,7 +376,7 @@ public class CircleService {
                 new Leg(lien.getId(), amount, BigDecimal.ZERO),
                 new Leg(savings.getId(), BigDecimal.ZERO, amount));
         return ledgerService.postLedgerTransaction(idempotencyKey, "LIEN_WITHDRAWAL", LedgerTransactionType.LIEN_WITHDRAWAL,
-                amount, "Lien withdrawal", legs);
+                amount, lien.getCurrency(), "Lien withdrawal", legs);
     }
 
     /** Zero if the member has no active circle, or their circle hasn't locked yet, so there's
@@ -405,7 +415,7 @@ public class CircleService {
                         new Leg(lien.getId(), seizedFromLien, BigDecimal.ZERO),
                         new Leg(circleReserveAccountId, BigDecimal.ZERO, seizedFromLien));
                 transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":lien-seizure", "LIEN_SEIZURE",
-                        LedgerTransactionType.LIEN_SEIZURE, seizedFromLien,
+                        LedgerTransactionType.LIEN_SEIZURE, seizedFromLien, lien.getCurrency(),
                         "Lien seizure for membership " + circleMembershipId, seizureLegs, operationId));
             }
 
@@ -417,7 +427,7 @@ public class CircleService {
                             new Leg(buffer.getId(), bufferPayout, BigDecimal.ZERO),
                             new Leg(circleReserveAccountId, BigDecimal.ZERO, bufferPayout));
                     transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":buffer-payout", "BUFFER_PAYOUT_TO_COVER_DEFAULT",
-                            LedgerTransactionType.BUFFER_PAYOUT_TO_COVER_DEFAULT, bufferPayout,
+                            LedgerTransactionType.BUFFER_PAYOUT_TO_COVER_DEFAULT, bufferPayout, buffer.getCurrency(),
                             "Buffer payout covering default for membership " + circleMembershipId, bufferLegs, operationId));
                 }
                 flagUnrecoveredShortfall(circleMembershipId, remainingLoss.subtract(bufferPayout));
@@ -444,7 +454,7 @@ public class CircleService {
         for (CircleMembership membership : circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE)) {
             UUID userId = membership.getUser().getId();
             postContributionRefund(userId, circleId, pot.getId(), circle.getContributionAmount(),
-                    circleId + ":" + userId + ":dissolve-refund");
+                    membership.getId() + ":dissolve-refund");
             membership.setStatus(MembershipStatus.DISSOLVED);
             circleMembershipRepository.save(membership);
         }
@@ -474,6 +484,24 @@ public class CircleService {
                 .orElseThrow(() -> new CircleNotFoundException("No active circle for user: " + userId));
     }
 
+    public List<CircleMembership> getMyMemberships(UUID userId) {
+        return circleMembershipRepository.findByUser_IdOrderByJoinedAtDesc(userId);
+    }
+
+    public List<Circle> getBrowsableCircles(UUID userId) {
+        return circleRepository.findByStatus(CircleStatus.FORMING).stream()
+                .filter(circle -> !circleMembershipRepository.existsByCircle_IdAndUser_Id(circle.getId(), userId))
+                .toList();
+    }
+
+    public BigDecimal calculateJoinCollateral(Circle circle) {
+        return roundAmount(resolveSizingPolicy(circle).calculateJoinCollateral(circle));
+    }
+
+    public Currency getCircleCurrency(UUID circleId) {
+        return circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT).getCurrency();
+    }
+
     public List<CircleMembership> getActiveMembers(UUID circleId) {
         if (!circleRepository.existsById(circleId)) {
             throw new CircleNotFoundException("Circle not found: " + circleId);
@@ -483,7 +511,7 @@ public class CircleService {
 
     /** Creator-initiated removal of a not-yet-locked member, e.g. after seeing a low reputation score. */
     @Transactional
-    public CircleMembership removeMember(UUID circleId, UUID requestingUserId, UUID memberUserId) {
+    public void removeMember(UUID circleId, UUID requestingUserId, UUID memberUserId) {
         Circle circle = circleRepository.findById(circleId)
                 .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
         if (!circle.getCreatedBy().getId().equals(requestingUserId)) {
@@ -500,10 +528,58 @@ public class CircleService {
                 .orElseThrow(() -> new CircleActionNotAllowedException("User is not an active member of this circle: " + memberUserId));
 
         CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
+        // Keyed by this membership row's own id - see the matching comment in joinCircle for why
+        // a static circleId:userId key isn't safe once a member can go through this cycle more than once.
         postContributionRefund(memberUserId, circleId, pot.getId(), circle.getContributionAmount(),
-                circleId + ":" + memberUserId + ":remove-refund");
-        membership.setStatus(MembershipStatus.REMOVED);
-        return circleMembershipRepository.save(membership);
+                membership.getId() + ":remove-refund");
+        circleMembershipRepository.delete(membership);
+    }
+
+    /** Creator-initiated and permanent, unlike removeMember: blocks the member from ever
+     * rejoining this circle (enforced in CircleSizingPolicy.canAdmitMember). */
+    @Transactional
+    public void banMember(UUID circleId, UUID requestingUserId, UUID memberUserId) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
+        if (!circle.getCreatedBy().getId().equals(requestingUserId)) {
+            throw new CircleCreatorRequiredException("Only the circle's creator can ban a member");
+        }
+        if (circle.getStatus() != CircleStatus.FORMING) {
+            throw new CircleActionNotAllowedException("Members can only be banned while the circle is still forming: " + circleId);
+        }
+        if (memberUserId.equals(requestingUserId)) {
+            throw new CircleActionNotAllowedException("The creator cannot ban themselves; cancel the circle instead");
+        }
+        CircleMembership membership = circleMembershipRepository
+                .findByCircle_IdAndUser_IdAndStatus(circleId, memberUserId, MembershipStatus.ACTIVE)
+                .orElseThrow(() -> new CircleActionNotAllowedException("User is not an active member of this circle: " + memberUserId));
+
+        CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
+        postContributionRefund(memberUserId, circleId, pot.getId(), circle.getContributionAmount(),
+                membership.getId() + ":ban-refund");
+        membership.setStatus(MembershipStatus.BANNED);
+        circleMembershipRepository.save(membership);
+    }
+
+    /** Self-initiated exit before lock, full contribution refund, collateral untouched, no reputation penalty */
+    @Transactional
+    public void leaveCircle(UUID circleId, UUID userId) {
+        Circle circle = circleRepository.findById(circleId)
+                .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
+        if (circle.getStatus() != CircleStatus.FORMING) {
+            throw new CircleActionNotAllowedException("Members can only leave while the circle is still forming: " + circleId);
+        }
+        if (circle.getCreatedBy().getId().equals(userId)) {
+            throw new CircleActionNotAllowedException("The creator cannot leave; cancel the circle instead");
+        }
+        CircleMembership membership = circleMembershipRepository
+                .findByCircle_IdAndUser_IdAndStatus(circleId, userId, MembershipStatus.ACTIVE)
+                .orElseThrow(() -> new CircleActionNotAllowedException("Not an active member of this circle: " + userId));
+
+        CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
+        postContributionRefund(userId, circleId, pot.getId(), circle.getContributionAmount(),
+                membership.getId() + ":leave-refund");
+        circleMembershipRepository.delete(membership);
     }
 
     // ---- scheduler interface: a scheduled job fetches due circles, then processes each one ----
@@ -731,7 +807,7 @@ public class CircleService {
                 new Leg(pot.getId(), BigDecimal.ZERO, releaseAmount));
         ledgerService.postLedgerTransaction(circleId + ":reserve-release-round-" + circle.getCurrentRound(),
                 "CIRCLE_RESERVE_DISBURSEMENT", LedgerTransactionType.CIRCLE_RESERVE_DISBURSEMENT, releaseAmount,
-                "Reserve release into pot for round " + circle.getCurrentRound(), legs);
+                reserve.getCurrency(), "Reserve release into pot for round " + circle.getCurrentRound(), legs);
     }
 
     private List<CircleMembership> unpaidActiveMemberships(Circle circle) {

@@ -4,6 +4,7 @@ import type { UserAccountType } from './accounts'
 export interface LedgerTransaction {
   id: string
   amount: number
+  currency: string
   description: string
   transactionType: string
   operationId: string | null
@@ -28,7 +29,7 @@ export function lienWithdraw(amount: number) {
 
 export interface TransferFields {
   fromType: UserAccountType
-  toUserId: string
+  toUsername: string
   toType: UserAccountType
   amount: number
 }

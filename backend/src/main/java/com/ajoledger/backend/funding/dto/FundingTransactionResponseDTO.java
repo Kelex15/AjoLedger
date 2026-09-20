@@ -1,5 +1,6 @@
 package com.ajoledger.backend.funding.dto;
 
+import com.ajoledger.backend.account.Currency;
 import com.ajoledger.backend.ledger.LedgerTransaction;
 
 import java.math.BigDecimal;
@@ -12,6 +13,7 @@ import java.util.UUID;
 public record FundingTransactionResponseDTO(
     UUID id,
     BigDecimal amount,
+    Currency currency,
     String description,
     String transactionType,
     Instant createdAt
@@ -21,6 +23,7 @@ public record FundingTransactionResponseDTO(
         return new FundingTransactionResponseDTO(
                 transaction.id(),
                 transaction.amount(),
+                transaction.currency(),
                 transaction.description(),
                 transaction.transactionType().name(),
                 transaction.createdAt());
