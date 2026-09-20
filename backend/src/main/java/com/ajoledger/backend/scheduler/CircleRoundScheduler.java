@@ -1,6 +1,6 @@
 package com.ajoledger.backend.scheduler;
 
-import com.ajoledger.backend.circle.CircleService;
+import com.ajoledger.backend.circle.CircleRoundService;
 
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -17,7 +17,7 @@ public class CircleRoundScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(CircleRoundScheduler.class);
 
-    private final CircleService circleService;
+    private final CircleRoundService circleRoundService;
 
     @Scheduled(cron = "${ajoledger.scheduler.deadline-check-cron}")
     public void checkRoundDeadlines() {
@@ -25,13 +25,13 @@ public class CircleRoundScheduler {
     }
 
     void runDueRoundChecks() {
-        processCircles(circleService.findCirclesWithRoundsDueToday());
+        processCircles(circleRoundService.findCirclesWithRoundsDueToday());
     }
 
     void processCircles(List<UUID> circleIds) {
         for (UUID circleId : circleIds) {
             try {
-                circleService.processRoundDeadline(circleId);
+                circleRoundService.processRoundDeadline(circleId);
             } catch (Exception e) {
                 log.error("Failed to process round deadline for circle {}", circleId, e);
             }
