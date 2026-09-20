@@ -225,6 +225,7 @@ public class CircleRoundService {
     /** One atomic unit: the circle and every remaining member finish together, or not at all. */
     private void completeCircle(Circle circle, int totalRounds) {
         transactionTemplate.execute(status -> {
+            refundWithdrawnMembers(circle);
             circle.setStatus(CircleStatus.COMPLETED);
             circle.setCurrentRound(totalRounds);
             circleRepository.save(circle);
@@ -234,6 +235,24 @@ public class CircleRoundService {
             }
             return null;
         });
+    }
+
+    private void refundWithdrawnMembers(Circle circle) {
+        List<CircleMembership> withdrawn = circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.WITHDRAWN);
+        if (withdrawn.isEmpty()) {
+            return;
+        }
+
+        UUID circleId = circle.getId();
+        CircleAccount reserve = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.RESERVE);
+        CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
+
+        List<CircleTransactionsService.WithdrawnMemberShare> shares = withdrawn.stream()
+                .map(m -> new CircleTransactionsService.WithdrawnMemberShare(m.getUser().getId(), m.getId(),
+                        m.getLastContributedRound() == null ? 0 : m.getLastContributedRound()))
+                .toList();
+        circleTransactionsService.postCircleCompletionRefunds(circleId, reserve.getId(), pot.getId(), pot.getCurrency(),
+                shares, circleId + ":completion-refund");
     }
 
     /** Spreads the reserve's current balance evenly across the rounds still ahead, rather than

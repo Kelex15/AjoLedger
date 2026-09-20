@@ -966,6 +966,80 @@ class CircleServiceIntegrationTest {
     }
 
     @Test
+    void withdrawalOfLastPositionRefundsWithdrawnMemberNetOfBufferFee() {
+        User creator = createFundedUser(new BigDecimal("500.00")); // position 1, gets round 1's payout
+        User m2 = createFundedUser(new BigDecimal("110.00")); // position 2, enough for round 1 only
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(m2.getId(), circle.getId()); // activates, round 1 resolves to creator
+
+        BigDecimal m2SavingsBeforeRefund = accountService.getUserAccount(m2.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance();
+        BigDecimal bufferBeforeRefund = userAccountRepository
+                .requireByUserIdAndType(Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER).getBalance();
+
+        pushPastDeadline(circle.getId());
+        circleRoundService.processRoundDeadline(circle.getId()); // m2 can't pay round 2, withdraws pre-payout
+
+        Circle finalCircle = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(finalCircle.getStatus()).isEqualTo(CircleStatus.COMPLETED);
+        assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(circle.getId(), m2.getId(), MembershipStatus.WITHDRAWN))
+                .isPresent();
+
+        // Creator's round-2 contribution ($100) was swept into the pot before m2's withdrawal
+        // vacated the only position left to receive it. m2 never reached their own payout, so it
+        // splits to them (weighted by the one round they did contribute) net of the 2% buffer fee.
+        CircleAccount pot = accountService.getCircleAccount(circle.getId(), CircleAccountType.POT).orElseThrow();
+        assertThat(pot.getBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+
+        BigDecimal bufferAfterRefund = userAccountRepository
+                .requireByUserIdAndType(Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER).getBalance();
+        assertThat(bufferAfterRefund.subtract(bufferBeforeRefund)).isEqualByComparingTo("2.00");
+
+        BigDecimal m2SavingsAfterRefund = accountService.getUserAccount(m2.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance();
+        assertThat(m2SavingsAfterRefund.subtract(m2SavingsBeforeRefund)).isEqualByComparingTo("98.00");
+    }
+
+    @Test
+    void backToBackWithdrawalsAcrossDifferentRoundsSplitRefundByRoundsContributed() {
+        User creator = createFundedUser(new BigDecimal("500.00")); // position 1, gets round 1's payout
+        User m2 = createFundedUser(new BigDecimal("500.00")); // position 2, gets round 2's payout
+        User m3 = createFundedUser(new BigDecimal("250.00")); // position 3, enough for rounds 1-2 only
+        User m4 = createFundedUser(new BigDecimal("150.00")); // position 4, enough for round 1 only
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(4, false));
+        circleService.joinCircle(m2.getId(), circle.getId());
+        circleService.joinCircle(m3.getId(), circle.getId());
+        circleService.joinCircle(m4.getId(), circle.getId()); // activates, round 1 resolves to creator
+
+        pushPastDeadline(circle.getId());
+        circleRoundService.processRoundDeadline(circle.getId()); // round 2 resolves to m2, m4 can't pay, withdraws
+
+        BigDecimal m3SavingsBeforeRefund = accountService.getUserAccount(m3.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance();
+        BigDecimal m4SavingsBeforeRefund = accountService.getUserAccount(m4.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance();
+
+        pushPastDeadline(circle.getId());
+        circleRoundService.processRoundDeadline(circle.getId()); // round 3: m3 can't pay either, withdraws - nobody left to pay, circle completes
+
+        Circle finalCircle = circleRepository.findById(circle.getId()).orElseThrow();
+        assertThat(finalCircle.getStatus()).isEqualTo(CircleStatus.COMPLETED);
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.WITHDRAWN))
+                .extracting(m -> m.getUser().getId())
+                .containsExactlyInAnyOrder(m3.getId(), m4.getId());
+
+        // Round 3's pot holds creator's and m2's contributions ($200), split between m3 (2 rounds
+        // paid) and m4 (1 round paid) net of the buffer's 2% cut: $196 total, in a 2:1 ratio.
+        CircleAccount pot = accountService.getCircleAccount(circle.getId(), CircleAccountType.POT).orElseThrow();
+        assertThat(pot.getBalance()).isEqualByComparingTo(BigDecimal.ZERO);
+
+        BigDecimal m3Refund = accountService.getUserAccount(m3.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance()
+                .subtract(m3SavingsBeforeRefund);
+        BigDecimal m4Refund = accountService.getUserAccount(m4.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance()
+                .subtract(m4SavingsBeforeRefund);
+        assertThat(m3Refund).isEqualByComparingTo("130.67");
+        assertThat(m4Refund).isEqualByComparingTo("65.33");
+    }
+
+    @Test
     void simultaneousWithdrawalsInSameRoundCompactPositionsCorrectly() {
         User creator = createFundedUser(new BigDecimal("500.00"));
         User m2 = createFundedUser(new BigDecimal("110.00")); // enough for round 1 only

@@ -40,6 +40,9 @@ public class CircleTransactionsService {
     private static final double PAYOUT_BUFFER_FEE_RATE = 0.02;
     // Placeholder, not tuned: caps how much of the shared buffer a single default can draw.
     private static final double BUFFER_DRAW_CAP_RATE = 0.30;
+    // Placeholder, not tuned: buffer's cut of a completing circle's leftover pot, before the
+    // remainder is split among members who withdrew before ever reaching their own payout.
+    private static final double WITHDRAWAL_REFUND_BUFFER_FEE_RATE = 0.02;
 
     private final LedgerService ledgerService;
     private final LedgerDao ledgerDao;
@@ -69,13 +72,19 @@ public class CircleTransactionsService {
     /** Exact inverse of postContribution's legs. */
     public LedgerTransaction postContributionRefund(UUID userId, UUID circleId, UUID circlePotAccountId,
                                                BigDecimal amount, String idempotencyKey) {
+        return postContributionRefund(userId, circleId, circlePotAccountId, amount, idempotencyKey, null);
+    }
+
+    /** Same as above, but grouped with other legs under one LedgerOperation. */
+    private LedgerTransaction postContributionRefund(UUID userId, UUID circleId, UUID circlePotAccountId,
+                                               BigDecimal amount, String idempotencyKey, UUID operationId) {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
         List<Leg> legs = List.of(
                 new Leg(circlePotAccountId, amount, BigDecimal.ZERO),
                 new Leg(savings.getId(), BigDecimal.ZERO, amount));
         return ledgerService.postLedgerTransaction(idempotencyKey, "CONTRIBUTION_REFUND",
                 LedgerTransactionType.CONTRIBUTION_REFUND, amount, savings.getCurrency(),
-                "Contribution refund for circle " + circleId, legs);
+                "Contribution refund for circle " + circleId, legs, operationId);
     }
 
     public LedgerTransaction postPayout(UUID circlePotAccountId, UUID circlePayoutId, UUID recipientUserId,
@@ -222,5 +231,67 @@ public class CircleTransactionsService {
         return ledgerService.postLedgerTransaction(idempotencyKey, "CIRCLE_RESERVE_DISBURSEMENT",
                 LedgerTransactionType.CIRCLE_RESERVE_DISBURSEMENT, amount, currency,
                 "Reserve release into pot for round " + roundNumber, legs);
+    }
+
+    public record WithdrawnMemberShare(UUID userId, UUID membershipId, int roundsContributed) {
+    }
+
+    /** Leftover reserve/pot money at completion belongs to members who withdrew before their
+     * own payout, not anyone already paid - split weighted by rounds contributed, net of a buffer fee. */
+    public List<LedgerTransaction> postCircleCompletionRefunds(UUID circleId, UUID reserveAccountId, UUID potAccountId,
+                                                                 Currency currency, List<WithdrawnMemberShare> withdrawnShares,
+                                                                 String idempotencyKey) {
+        int totalRoundsContributed = withdrawnShares.stream().mapToInt(WithdrawnMemberShare::roundsContributed).sum();
+        if (totalRoundsContributed <= 0) {
+            return List.of();
+        }
+
+        return ledgerService.postLedgerOperation("CIRCLE_COMPLETION_REFUND", circleId, operationId -> {
+            List<LedgerTransaction> transactions = new ArrayList<>();
+
+            BigDecimal reserveBalance = ledgerDao.getBalance(reserveAccountId);
+            if (reserveBalance.signum() > 0) {
+                List<Leg> reserveLegs = List.of(
+                        new Leg(reserveAccountId, reserveBalance, BigDecimal.ZERO),
+                        new Leg(potAccountId, BigDecimal.ZERO, reserveBalance));
+                transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":reserve-sweep", "CIRCLE_RESERVE_DISBURSEMENT",
+                        LedgerTransactionType.CIRCLE_RESERVE_DISBURSEMENT, reserveBalance, currency,
+                        "Reserve swept into pot for circle " + circleId + " completion", reserveLegs, operationId));
+            }
+
+            BigDecimal potBalance = ledgerDao.getBalance(potAccountId);
+            if (potBalance.signum() <= 0) {
+                return transactions;
+            }
+
+            BigDecimal bufferFee = roundAmount(potBalance.multiply(BigDecimal.valueOf(WITHDRAWAL_REFUND_BUFFER_FEE_RATE)));
+            if (bufferFee.signum() > 0) {
+                UserAccount buffer = userAccountRepository.requireByUserIdAndType(Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
+                List<Leg> feeLegs = List.of(
+                        new Leg(potAccountId, bufferFee, BigDecimal.ZERO),
+                        new Leg(buffer.getId(), BigDecimal.ZERO, bufferFee));
+                transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":buffer-fee", "PAYOUT_BUFFER_FEE",
+                        LedgerTransactionType.PAYOUT_BUFFER_FEE, bufferFee, currency,
+                        "Withdrawal refund buffer fee for circle " + circleId, feeLegs, operationId));
+            }
+
+            BigDecimal refundable = potBalance.subtract(bufferFee);
+            if (refundable.signum() <= 0) {
+                return transactions;
+            }
+
+            BigDecimal perRoundShare = refundable.divide(BigDecimal.valueOf(totalRoundsContributed), 10, RoundingMode.HALF_UP);
+            for (WithdrawnMemberShare share : withdrawnShares) {
+                if (share.roundsContributed() <= 0) {
+                    continue;
+                }
+                BigDecimal amount = roundAmount(perRoundShare.multiply(BigDecimal.valueOf(share.roundsContributed())));
+                if (amount.signum() > 0) {
+                    transactions.add(postContributionRefund(share.userId(), circleId, potAccountId, amount,
+                            idempotencyKey + ":" + share.membershipId(), operationId));
+                }
+            }
+            return transactions;
+        });
     }
 }
