@@ -113,3 +113,12 @@ export function banMember(circleId: string, memberUserId: string) {
 export function leaveCircle(circleId: string) {
   return apiFetch<void>(`/api/circles/${circleId}/leave`, { method: 'POST' })
 }
+
+// Dev-only: backend only registers these routes under the "dev" profile.
+export function forceRoundResolve(circleId: string) {
+  return apiFetch<void>(`/api/dev/circles/${circleId}/force-round`, { method: 'POST' })
+}
+
+export function forceEnrollmentClose(circleId: string) {
+  return apiFetch<void>(`/api/dev/circles/${circleId}/force-enrollment-close`, { method: 'POST' })
+}

@@ -8,6 +8,8 @@ import {
   fetchMyCircle,
   fetchMyCircleHistory,
   fetchOpenCircles,
+  forceEnrollmentClose,
+  forceRoundResolve,
   inviteToCircle,
   joinCircle,
   leaveCircle,
@@ -20,6 +22,7 @@ import { ApiError } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
 import { useAuth } from '../auth/AuthContext'
 import { ErrorMessage } from '../components/ErrorMessage'
+import { env } from '../config/env'
 
 export function CirclesPage() {
   const { data: circle, isLoading } = useQuery({
@@ -411,6 +414,43 @@ function MyCircle({ circle }: { circle: Circle }) {
     }
   }
 
+  const [devToolsError, setDevToolsError] = useState<string | null>(null)
+
+  const forceRoundMutation = useMutation({
+    mutationFn: () => forceRoundResolve(circle.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
+      queryClient.invalidateQueries({ queryKey: membersQueryKey })
+      queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
+    },
+  })
+
+  const forceEnrollmentCloseMutation = useMutation({
+    mutationFn: () => forceEnrollmentClose(circle.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.myCircle })
+      queryClient.invalidateQueries({ queryKey: membersQueryKey })
+    },
+  })
+
+  async function handleForceRound() {
+    setDevToolsError(null)
+    try {
+      await forceRoundMutation.mutateAsync()
+    } catch (err) {
+      setDevToolsError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    }
+  }
+
+  async function handleForceEnrollmentClose() {
+    setDevToolsError(null)
+    try {
+      await forceEnrollmentCloseMutation.mutateAsync()
+    } catch (err) {
+      setDevToolsError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    }
+  }
+
   const [inviteTarget, setInviteTarget] = useState('')
   const [inviteByEmail, setInviteByEmail] = useState(false)
   const [inviteCode, setInviteCode] = useState<string | null>(null)
@@ -511,6 +551,23 @@ function MyCircle({ circle }: { circle: Circle }) {
             </div>
           )}
         </>
+      )}
+
+      {env.isDev && (
+        <div>
+          <h3>Dev tools</h3>
+          {circle.status === 'ACTIVE' && (
+            <button onClick={handleForceRound} disabled={forceRoundMutation.isPending}>
+              {forceRoundMutation.isPending ? 'Resolving…' : 'Force resolve round'}
+            </button>
+          )}
+          {circle.status === 'FORMING' && (
+            <button onClick={handleForceEnrollmentClose} disabled={forceEnrollmentCloseMutation.isPending}>
+              {forceEnrollmentCloseMutation.isPending ? 'Closing…' : 'Force close enrollment'}
+            </button>
+          )}
+          <ErrorMessage message={devToolsError} />
+        </div>
       )}
     </div>
   )
