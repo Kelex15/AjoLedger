@@ -1,6 +1,8 @@
 spring:
   application:
     name: backend
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/ajoledger}
     username: ${DATABASE_USERNAME:ajoledger}
@@ -8,7 +10,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
+    show-sql: ${HIBERNATE_SHOW_SQL:false}
     properties:
       hibernate:
         '[format_sql]': true
