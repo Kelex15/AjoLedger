@@ -63,6 +63,7 @@ class CircleEnrollmentSchedulerIntegrationTest {
                 .build());
         accountService.createUserAccount(user, UserAccountType.SAVINGS);
         accountService.createUserAccount(user, UserAccountType.LIEN);
+        accountService.createUserAccount(user, UserAccountType.CHECKING);
         fundingService.postDeposit(user.getId(), UserAccountType.SAVINGS, FundingType.STRIPE,
                 savingsBalance, UUID.randomUUID().toString());
         return user;

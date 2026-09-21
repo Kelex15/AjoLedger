@@ -42,7 +42,7 @@ public class CircleTransactionsService {
     private static final double BUFFER_DRAW_CAP_RATE = 0.30;
     // Placeholder, not tuned: buffer's cut of a completing circle's leftover pot, before the
     // remainder is split among members who withdrew before ever reaching their own payout.
-    private static final double WITHDRAWAL_REFUND_BUFFER_FEE_RATE = 0.02;
+    static final double WITHDRAWAL_REFUND_BUFFER_FEE_RATE = 0.02;
 
     private final LedgerService ledgerService;
     private final LedgerDao ledgerDao;
@@ -171,12 +171,34 @@ public class CircleTransactionsService {
                 .orElse(BigDecimal.ZERO);
     }
 
-    /** Default waterfall (design/v1.md §5): lien seized first, then the buffer covers the rest.
-     * Both legs credit the circle's reserve account, released gradually into the pot at each
-     * round's resolution instead of landing as a lump sum on whichever round resolves next. */
+    /** Either groupLoss or the ceiling can be the binding constraint, so both shrink together. */
+    private record Seizure(BigDecimal amount, BigDecimal remainingGroupLoss, BigDecimal remainingCeilingBudget) {
+    }
+
+    private Seizure seize(UserAccount account, BigDecimal remainingGroupLoss, BigDecimal remainingCeilingBudget) {
+        BigDecimal amount = ledgerDao.getBalance(account.getId()).min(remainingGroupLoss).min(remainingCeilingBudget);
+        return new Seizure(amount, remainingGroupLoss.subtract(amount), remainingCeilingBudget.subtract(amount));
+    }
+
+    private void postSeizureLegIfPositive(List<LedgerTransaction> transactions, UserAccount account, BigDecimal amount,
+                                           LedgerTransactionType type, String idempotencySuffix, String description,
+                                           UUID circleReserveAccountId, String idempotencyKey, UUID operationId) {
+        if (amount.signum() <= 0) {
+            return;
+        }
+        List<Leg> legs = List.of(
+                new Leg(account.getId(), amount, BigDecimal.ZERO),
+                new Leg(circleReserveAccountId, BigDecimal.ZERO, amount));
+        transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":" + idempotencySuffix, type.name(), type,
+                amount, account.getCurrency(), description, legs, operationId));
+    }
+
+    /** Default waterfall (design/v1.md §5): SAVINGS, then LIEN, then CHECKING, then the buffer. */
     public List<LedgerTransaction> postDefaultWaterfall(UUID userId, UUID circleMembershipId, UUID circleReserveAccountId,
                                                     BigDecimal groupLoss, String idempotencyKey) {
+        UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
         UserAccount lien = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.LIEN);
+        UserAccount checking = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.CHECKING);
         UserAccount buffer = userAccountRepository.requireByUserIdAndType(
                 Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
         CircleMemberDebitAuthorization authorization = circleMemberDebitAuthorizationRepository
@@ -186,22 +208,27 @@ public class CircleTransactionsService {
                         .remainingCeiling(groupLoss)
                         .build());
 
-        BigDecimal lienBalance = ledgerDao.getBalance(lien.getId());
-        BigDecimal seizedFromLien = lienBalance.min(groupLoss).min(authorization.getRemainingCeiling());
-        BigDecimal remainingLoss = groupLoss.subtract(seizedFromLien);
+        Seizure savingsSeizure = seize(savings, groupLoss, authorization.getRemainingCeiling());
+        Seizure lienSeizure = seize(lien, savingsSeizure.remainingGroupLoss(), savingsSeizure.remainingCeilingBudget());
+        Seizure checkingSeizure = seize(checking, lienSeizure.remainingGroupLoss(), lienSeizure.remainingCeilingBudget());
+        BigDecimal remainingLoss = checkingSeizure.remainingGroupLoss();
+        BigDecimal totalSeized = savingsSeizure.amount().add(lienSeizure.amount()).add(checkingSeizure.amount());
 
         return ledgerService.postLedgerOperation("DEFAULT_WATERFALL", circleMembershipId, operationId -> {
             List<LedgerTransaction> transactions = new ArrayList<>();
 
-            if (seizedFromLien.signum() > 0) {
-                List<Leg> seizureLegs = List.of(
-                        new Leg(lien.getId(), seizedFromLien, BigDecimal.ZERO),
-                        new Leg(circleReserveAccountId, BigDecimal.ZERO, seizedFromLien));
-                transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":lien-seizure", "LIEN_SEIZURE",
-                        LedgerTransactionType.LIEN_SEIZURE, seizedFromLien, lien.getCurrency(),
-                        "Lien seizure for membership " + circleMembershipId, seizureLegs, operationId));
+            postSeizureLegIfPositive(transactions, savings, savingsSeizure.amount(), LedgerTransactionType.SAVINGS_SEIZURE,
+                    "savings-seizure", "Savings seizure for membership " + circleMembershipId,
+                    circleReserveAccountId, idempotencyKey, operationId);
+            postSeizureLegIfPositive(transactions, lien, lienSeizure.amount(), LedgerTransactionType.LIEN_SEIZURE,
+                    "lien-seizure", "Lien seizure for membership " + circleMembershipId,
+                    circleReserveAccountId, idempotencyKey, operationId);
+            postSeizureLegIfPositive(transactions, checking, checkingSeizure.amount(), LedgerTransactionType.CHECKING_SEIZURE,
+                    "checking-seizure", "Checking seizure for membership " + circleMembershipId,
+                    circleReserveAccountId, idempotencyKey, operationId);
 
-                authorization.setRemainingCeiling(authorization.getRemainingCeiling().subtract(seizedFromLien));
+            if (totalSeized.signum() > 0) {
+                authorization.setRemainingCeiling(authorization.getRemainingCeiling().subtract(totalSeized));
                 circleMemberDebitAuthorizationRepository.save(authorization);
             }
 

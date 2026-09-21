@@ -73,6 +73,7 @@ class CircleRoundSchedulerIntegrationTest {
                 .build());
         accountService.createUserAccount(user, UserAccountType.SAVINGS);
         accountService.createUserAccount(user, UserAccountType.LIEN);
+        accountService.createUserAccount(user, UserAccountType.CHECKING);
         fundingService.postDeposit(user.getId(), UserAccountType.SAVINGS, FundingType.STRIPE,
                 savingsBalance, UUID.randomUUID().toString());
         return user;
@@ -350,6 +351,178 @@ class CircleRoundSchedulerIntegrationTest {
                 .isPresent();
         // Capped at the $40 ceiling, not the full $100 group loss.
         assertThat(lienBeforeDefault.subtract(lienAfterDefault)).isEqualByComparingTo("40.00");
+        assertThat(circleMemberDebitAuthorizationRepository.findByCircleMembership_Id(recipientMembership.getId())
+                .orElseThrow().getRemainingCeiling()).isEqualByComparingTo("0.00");
+    }
+
+    private CircleMembership lockTwoMemberCircleAndGetRecipient(String circleName, User memberA, User memberB) {
+        CircleCreateRequestDTO dto = CircleCreateRequestDTO.builder()
+                .name(circleName)
+                .description("A circle for testing")
+                .sizingPolicyType(CircleSizingPolicyType.FIXED_SIZE)
+                .maxMembers(2)
+                .term(4)
+                .contributionAmount(new BigDecimal("100.00"))
+                .gated(false)
+                .build();
+
+        Circle circle = circleService.createCircle(memberA.getId(), dto);
+        circleService.joinCircle(memberB.getId(), circle.getId());
+
+        return circleMembershipRepository
+                .findByCircle_IdAndUser_IdAndStatus(circle.getId(), memberA.getId(), MembershipStatus.ACTIVE)
+                .filter(m -> m.getPosition() != null && m.getPosition() == 1)
+                .orElseGet(() -> circleMembershipRepository
+                        .findByCircle_IdAndUser_IdAndStatus(circle.getId(), memberB.getId(), MembershipStatus.ACTIVE)
+                        .orElseThrow());
+    }
+
+    private void setSavingsBalance(UUID userId, BigDecimal target) {
+        BigDecimal current = accountService.getUserAccount(userId, UserAccountType.SAVINGS).orElseThrow().getBalance();
+        if (current.signum() > 0) {
+            fundingService.postWithdrawal(userId, UserAccountType.SAVINGS, FundingType.STRIPE, current, UUID.randomUUID().toString());
+        }
+        if (target.signum() > 0) {
+            fundingService.postDeposit(userId, UserAccountType.SAVINGS, FundingType.STRIPE, target, UUID.randomUUID().toString());
+        }
+    }
+
+    private void forceOverdue(Circle circle) {
+        Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
+        reloaded.setLastRoundAt(Instant.now().minus(Duration.ofDays((reloaded.getTerm() + 1L) * 7)));
+        circleRepository.save(reloaded);
+    }
+
+    @Test
+    void defaultSeizesFromSavingsBeforeLien() {
+        User memberA = createFundedUser(new BigDecimal("1000.00"));
+        User memberB = createFundedUser(new BigDecimal("1000.00"));
+        CircleMembership recipientMembership = lockTwoMemberCircleAndGetRecipient("Savings First Circle", memberA, memberB);
+        UUID recipientId = recipientMembership.getUser().getId();
+        BigDecimal groupLoss = recipientMembership.getCircle().getContributionAmount();
+
+        BigDecimal savingsAmount = new BigDecimal("30.00");
+        circleTransactionsService.postLienHold(recipientId, groupLoss, UUID.randomUUID().toString());
+        setSavingsBalance(recipientId, savingsAmount);
+        forceOverdue(circleRepository.findById(recipientMembership.getCircle().getId()).orElseThrow());
+
+        BigDecimal lienBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+        BigDecimal expectedLienSeizure = groupLoss.subtract(savingsAmount);
+
+        scheduler.runDueRoundChecks();
+
+        BigDecimal savingsAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.SAVINGS).orElseThrow().getBalance();
+        BigDecimal lienAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(
+                recipientMembership.getCircle().getId(), recipientId, MembershipStatus.DEFAULTED)).isPresent();
+        assertThat(savingsAfterDefault).isEqualByComparingTo("0.00");
+        assertThat(lienBeforeDefault.subtract(lienAfterDefault)).isEqualByComparingTo(expectedLienSeizure);
+    }
+
+    @Test
+    void defaultFallsThroughToCheckingWhenSavingsAndLienInsufficient() {
+        User memberA = createFundedUser(new BigDecimal("1000.00"));
+        User memberB = createFundedUser(new BigDecimal("1000.00"));
+        CircleMembership recipientMembership = lockTwoMemberCircleAndGetRecipient("Checking Fallback Circle", memberA, memberB);
+        UUID recipientId = recipientMembership.getUser().getId();
+        BigDecimal groupLoss = recipientMembership.getCircle().getContributionAmount();
+
+        BigDecimal savingsAmount = new BigDecimal("10.00");
+        setSavingsBalance(recipientId, savingsAmount);
+        fundingService.postDeposit(recipientId, UserAccountType.CHECKING, FundingType.STRIPE, groupLoss, UUID.randomUUID().toString());
+        forceOverdue(circleRepository.findById(recipientMembership.getCircle().getId()).orElseThrow());
+
+        BigDecimal lienBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+        BigDecimal checkingBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.CHECKING).orElseThrow().getBalance();
+        BigDecimal expectedCheckingSeizure = groupLoss.subtract(savingsAmount).subtract(lienBeforeDefault);
+
+        scheduler.runDueRoundChecks();
+
+        BigDecimal savingsAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.SAVINGS).orElseThrow().getBalance();
+        BigDecimal lienAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+        BigDecimal checkingAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.CHECKING).orElseThrow().getBalance();
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(
+                recipientMembership.getCircle().getId(), recipientId, MembershipStatus.DEFAULTED)).isPresent();
+        assertThat(savingsAfterDefault).isEqualByComparingTo("0.00");
+        assertThat(lienAfterDefault).isEqualByComparingTo("0.00");
+        assertThat(checkingBeforeDefault.subtract(checkingAfterDefault)).isEqualByComparingTo(expectedCheckingSeizure);
+    }
+
+    @Test
+    void sharedCeilingCapsTotalSeizureAcrossAllThreeAccounts() {
+        User memberA = createFundedUser(new BigDecimal("1000.00"));
+        User memberB = createFundedUser(new BigDecimal("1000.00"));
+        CircleMembership recipientMembership = lockTwoMemberCircleAndGetRecipient("Shared Ceiling Circle", memberA, memberB);
+        UUID recipientId = recipientMembership.getUser().getId();
+        BigDecimal groupLoss = recipientMembership.getCircle().getContributionAmount();
+
+        BigDecimal savingsAmount = new BigDecimal("50.00");
+        BigDecimal ceiling = new BigDecimal("40.00");
+        circleTransactionsService.postLienHold(recipientId, groupLoss, UUID.randomUUID().toString());
+        fundingService.postDeposit(recipientId, UserAccountType.CHECKING, FundingType.STRIPE, groupLoss, UUID.randomUUID().toString());
+        setSavingsBalance(recipientId, savingsAmount);
+        CircleMemberDebitAuthorization authorization = circleMemberDebitAuthorizationRepository
+                .findByCircleMembership_Id(recipientMembership.getId()).orElseThrow();
+        authorization.setRemainingCeiling(ceiling);
+        circleMemberDebitAuthorizationRepository.save(authorization);
+        forceOverdue(circleRepository.findById(recipientMembership.getCircle().getId()).orElseThrow());
+
+        BigDecimal lienBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+        BigDecimal checkingBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.CHECKING).orElseThrow().getBalance();
+        BigDecimal expectedSavingsSeizure = savingsAmount.min(groupLoss).min(ceiling);
+
+        scheduler.runDueRoundChecks();
+
+        BigDecimal savingsAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.SAVINGS).orElseThrow().getBalance();
+        BigDecimal lienAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+        BigDecimal checkingAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.CHECKING).orElseThrow().getBalance();
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(
+                recipientMembership.getCircle().getId(), recipientId, MembershipStatus.DEFAULTED)).isPresent();
+        assertThat(savingsAmount.subtract(savingsAfterDefault)).isEqualByComparingTo(expectedSavingsSeizure);
+        assertThat(lienAfterDefault).isEqualByComparingTo(lienBeforeDefault);
+        assertThat(checkingAfterDefault).isEqualByComparingTo(checkingBeforeDefault);
+        assertThat(circleMemberDebitAuthorizationRepository.findByCircleMembership_Id(recipientMembership.getId())
+                .orElseThrow().getRemainingCeiling()).isEqualByComparingTo(ceiling.subtract(expectedSavingsSeizure));
+    }
+
+    @Test
+    void sharedCeilingPartiallyCapsMiddleOfWaterfall() {
+        User memberA = createFundedUser(new BigDecimal("1000.00"));
+        User memberB = createFundedUser(new BigDecimal("1000.00"));
+        CircleMembership recipientMembership = lockTwoMemberCircleAndGetRecipient("Mid-Waterfall Cap Circle", memberA, memberB);
+        UUID recipientId = recipientMembership.getUser().getId();
+        BigDecimal groupLoss = recipientMembership.getCircle().getContributionAmount();
+
+        BigDecimal savingsAmount = new BigDecimal("10.00");
+        BigDecimal ceiling = new BigDecimal("30.00");
+        circleTransactionsService.postLienHold(recipientId, groupLoss, UUID.randomUUID().toString());
+        fundingService.postDeposit(recipientId, UserAccountType.CHECKING, FundingType.STRIPE, groupLoss, UUID.randomUUID().toString());
+        setSavingsBalance(recipientId, savingsAmount);
+        CircleMemberDebitAuthorization authorization = circleMemberDebitAuthorizationRepository
+                .findByCircleMembership_Id(recipientMembership.getId()).orElseThrow();
+        authorization.setRemainingCeiling(ceiling);
+        circleMemberDebitAuthorizationRepository.save(authorization);
+        forceOverdue(circleRepository.findById(recipientMembership.getCircle().getId()).orElseThrow());
+
+        BigDecimal lienBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+        BigDecimal checkingBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.CHECKING).orElseThrow().getBalance();
+        BigDecimal expectedSavingsSeizure = savingsAmount.min(groupLoss).min(ceiling);
+        BigDecimal expectedLienSeizure = ceiling.subtract(expectedSavingsSeizure);
+
+        scheduler.runDueRoundChecks();
+
+        BigDecimal savingsAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.SAVINGS).orElseThrow().getBalance();
+        BigDecimal lienAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+        BigDecimal checkingAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.CHECKING).orElseThrow().getBalance();
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(
+                recipientMembership.getCircle().getId(), recipientId, MembershipStatus.DEFAULTED)).isPresent();
+        assertThat(savingsAfterDefault).isEqualByComparingTo(savingsAmount.subtract(expectedSavingsSeizure));
+        assertThat(lienBeforeDefault.subtract(lienAfterDefault)).isEqualByComparingTo(expectedLienSeizure);
+        assertThat(checkingAfterDefault).isEqualByComparingTo(checkingBeforeDefault);
         assertThat(circleMemberDebitAuthorizationRepository.findByCircleMembership_Id(recipientMembership.getId())
                 .orElseThrow().getRemainingCeiling()).isEqualByComparingTo("0.00");
     }
