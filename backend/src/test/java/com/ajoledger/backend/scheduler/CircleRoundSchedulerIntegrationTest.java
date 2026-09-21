@@ -11,7 +11,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.ajoledger.backend.account.AccountService;
@@ -170,6 +172,55 @@ class CircleRoundSchedulerIntegrationTest {
         // not the real debt once a default has actually happened - the group is still short the full
         // $100 contribution regardless of how the circle was formed.
         assertThat(lienBeforeDefault.subtract(lienAfterDefault)).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    void coOccurringWithdrawalDoesNotZeroOutSiblingDefaultsGroupLoss() {
+        // Processing order per circle is effectively random, so many circles in one run samples
+        // both orderings instead of gambling on one.
+        int circleCount = 10;
+        Map<UUID, BigDecimal> lienBeforeDefaultByUserId = new HashMap<>();
+
+        for (int i = 0; i < circleCount; i++) {
+            User recipient = createFundedUser(new BigDecimal("1000.00"));
+            User withdrawer = createFundedUser(new BigDecimal("1000.00"));
+
+            CircleCreateRequestDTO dto = CircleCreateRequestDTO.builder()
+                    .name("Ordering Circle " + i)
+                    .description("A circle for testing")
+                    .sizingPolicyType(CircleSizingPolicyType.FIXED_SIZE)
+                    .maxMembers(2)
+                    .term(4)
+                    .contributionAmount(new BigDecimal("100.00"))
+                    .gated(false)
+                    .build();
+
+            Circle circle = circleService.createCircle(recipient.getId(), dto);
+            circleService.joinCircle(withdrawer.getId(), circle.getId()); // activates, round 1 pays recipient
+
+            circleTransactionsService.postLienHold(recipient.getId(), new BigDecimal("100.00"), UUID.randomUUID().toString());
+
+            for (User member : List.of(recipient, withdrawer)) {
+                BigDecimal balance = accountService.getUserAccount(member.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance();
+                fundingService.postWithdrawal(member.getId(), UserAccountType.SAVINGS, FundingType.STRIPE,
+                        balance, UUID.randomUUID().toString());
+            }
+
+            Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
+            reloaded.setLastRoundAt(Instant.now().minus(Duration.ofDays((reloaded.getTerm() + 1L) * 7)));
+            circleRepository.save(reloaded);
+
+            BigDecimal lienBeforeDefault = accountService.getUserAccount(recipient.getId(), UserAccountType.LIEN).orElseThrow().getBalance();
+            lienBeforeDefaultByUserId.put(recipient.getId(), lienBeforeDefault);
+        }
+
+        scheduler.runDueRoundChecks();
+
+        for (Map.Entry<UUID, BigDecimal> entry : lienBeforeDefaultByUserId.entrySet()) {
+            BigDecimal lienAfterDefault = accountService.getUserAccount(entry.getKey(), UserAccountType.LIEN).orElseThrow().getBalance();
+            assertThat(entry.getValue().subtract(lienAfterDefault)).as("lien seized for defaulter %s", entry.getKey())
+                    .isEqualByComparingTo("100.00");
+        }
     }
 
     @Test

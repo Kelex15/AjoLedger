@@ -101,23 +101,28 @@ public class CircleRoundService {
         CircleAccount reserve = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.RESERVE);
         List<UUID> unpaidMembershipIds = unpaidActiveMemberships(circle).stream().map(CircleMembership::getId).toList();
 
+        // Captured before any of this pass's own withdrawals can shrink lockedMemberCount, so a
+        // defaulter's loss isn't understated just because a sibling withdrawal in the same pass
+        // happened to be processed first.
+        int totalRoundsAtPassStart = circle.getLockedMemberCount();
         for (UUID membershipId : unpaidMembershipIds) {
-            processNonPayer(circle, reserve.getId(), membershipId);
+            processNonPayer(circleId, reserve.getId(), membershipId, totalRoundsAtPassStart);
         }
     }
 
     /** Per membership, not per loop, so one failure can't roll back another's already-successful processing. */
-    private void processNonPayer(Circle circle, UUID reserveAccountId, UUID membershipId) {
+    private void processNonPayer(UUID circleId, UUID reserveAccountId, UUID membershipId, int totalRoundsAtPassStart) {
         transactionTemplate.execute(status -> {
             // Re-fetched since an earlier withdrawal in this same loop may have shifted this
             // membership's position.
+            Circle circle = circleRepository.findById(circleId).orElseThrow();
             CircleMembership membership = circleMembershipRepository.findById(membershipId).orElseThrow();
             User user = membership.getUser();
             boolean alreadyPaidOut = circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circle.getId(), user.getId());
 
             if (alreadyPaidOut) {
                 int position = membership.getPosition() != null ? membership.getPosition() : 0;
-                BigDecimal groupLoss = resolveSizingPolicy(circle).calculateRealizedGroupLoss(circle, position);
+                BigDecimal groupLoss = resolveSizingPolicy(circle).calculateRealizedGroupLoss(circle, totalRoundsAtPassStart, position);
 
                 // Waterfall runs first, membership only flips to DEFAULTED once funds are actually
                 // seized. If this throws, the membership stays ACTIVE so the next scheduler pass

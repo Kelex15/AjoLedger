@@ -64,10 +64,11 @@ public abstract class CircleSizingPolicy {
         return TrustCalculations.applyGatedDiscount(loss, circle.isGated(), GATED_LOSS_DISCOUNT);
     }
 
-    /** Never gated-discounted - a real default owes the full contribution regardless of gating. */
-    public BigDecimal calculateRealizedGroupLoss(Circle circle, int payoutPosition) {
-        return TrustCalculations.calculateGroupLoss(circle.getContributionAmount(),
-                circle.getLockedMemberCount(), payoutPosition);
+    /** Never gated-discounted - a real default owes the full contribution regardless of gating.
+     * totalRounds is passed explicitly rather than read off circle, since a co-occurring
+     * withdrawal in the same pass can shrink circle.getLockedMemberCount() before this runs. */
+    public BigDecimal calculateRealizedGroupLoss(Circle circle, int totalRounds, int payoutPosition) {
+        return TrustCalculations.calculateGroupLoss(circle.getContributionAmount(), totalRounds, payoutPosition);
     }
 
     /** Flat, uniform join-time hold, unrelated to eventual payout position (not known until
