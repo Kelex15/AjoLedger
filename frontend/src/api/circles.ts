@@ -5,6 +5,7 @@ export interface Circle {
   name: string
   description: string
   maxMembers: number
+  totalRounds: number
   term: number
   contributionAmount: number
   collateral: number

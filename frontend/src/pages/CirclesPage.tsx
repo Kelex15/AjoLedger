@@ -479,7 +479,7 @@ function MyCircle({ circle }: { circle: Circle }) {
       <p>{circle.description}</p>
       <ul>
         <li>Status: {circle.status}</li>
-        <li>Round: {circle.currentRound} of {circle.maxMembers}</li>
+        <li>Round: {circle.currentRound} of {circle.totalRounds}</li>
         <li>Term: {circle.term} week(s)</li>
         <li>Contribution: {circle.contributionAmount.toFixed(2)} {circle.currency}</li>
         <li>Collateral held: {circle.collateral.toFixed(2)} {circle.currency}</li>

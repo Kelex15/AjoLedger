@@ -37,7 +37,7 @@ public class CircleController {
     private CircleResponseDTO toResponseDTO(Circle circle) {
         BigDecimal collateral = circleService.calculateJoinCollateral(circle);
         Currency currency = circleService.getCircleCurrency(circle.getId());
-        return CircleResponseDTO.fromCircle(circle, collateral, currency);
+        return CircleResponseDTO.fromCircle(circle, collateral, currency, circleService.getTotalRounds(circle));
     }
 
     @PostMapping(version = "1")

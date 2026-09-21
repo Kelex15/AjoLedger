@@ -451,6 +451,10 @@ class CircleServiceIntegrationTest {
         assertThat(reloaded.getStatus()).isEqualTo(CircleStatus.ACTIVE);
         assertThat(reloaded.getLockedMemberCount()).isEqualTo(2);
         assertThat(circlePayoutRepository.existsByCircle_IdAndRecipient_Id(circle.getId(), creator.getId())).isTrue();
+
+        // Locked with 2 of a possible 5 - the real round count is the 2 who actually locked in,
+        // not the enrollment cap it never filled.
+        assertThat(circleService.getTotalRounds(reloaded)).isEqualTo(2);
     }
 
     @Test

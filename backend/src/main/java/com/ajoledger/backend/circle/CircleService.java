@@ -66,6 +66,14 @@ public class CircleService {
         return sizingPoliciesByType.get(circle.getSizingPolicyType().name());
     }
 
+    /** Locked circles use the real round count; a still-FORMING circle has no lockedMemberCount
+     * yet, so maxMembers is the best available pre-lock estimate. */
+    public int getTotalRounds(Circle circle) {
+        return circle.getLockedMemberCount() != null
+                ? resolveSizingPolicy(circle).getTotalRounds(circle)
+                : circle.getMaxMembers();
+    }
+
     private static BigDecimal roundAmount(BigDecimal amount) {
         return amount.setScale(Currency.USD.getDecimalScale(), RoundingMode.HALF_UP);
     }
@@ -309,11 +317,7 @@ public class CircleService {
         long penalizedFailures = TrustCalculations.calculatePenalizedFailures(withdrawals, defaults, DEFAULT_PENALTY_MULTIPLIER);
         double successRate = TrustCalculations.calculateSuccessRate(successes, penalizedFailures, REPUTATION_SMOOTHING_PRIOR);
 
-        // Locked circles use the real round count; a still-FORMING circle has no lockedMemberCount
-        // yet, so maxMembers is the best available pre-lock estimate.
-        int totalRounds = circle.getLockedMemberCount() != null
-                ? resolveSizingPolicy(circle).getTotalRounds(circle)
-                : circle.getMaxMembers();
+        int totalRounds = getTotalRounds(circle);
         double worstCaseExposure = circle.getContributionAmount().doubleValue() * (totalRounds - 1);
         double lienCoverageRatio = TrustCalculations.calculateLienCoverageRatio(lienBalance, worstCaseExposure);
 

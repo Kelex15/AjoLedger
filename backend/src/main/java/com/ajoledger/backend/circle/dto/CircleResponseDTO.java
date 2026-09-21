@@ -12,6 +12,7 @@ public record CircleResponseDTO(
     String name,
     String description,
     int maxMembers,
+    int totalRounds,
     int term,
     BigDecimal contributionAmount,
     BigDecimal collateral,
@@ -24,12 +25,13 @@ public record CircleResponseDTO(
     Instant createdAt
 ) {
 
-    public static CircleResponseDTO fromCircle(Circle circle, BigDecimal collateral, Currency currency) {
+    public static CircleResponseDTO fromCircle(Circle circle, BigDecimal collateral, Currency currency, int totalRounds) {
         return new CircleResponseDTO(
                 circle.getId(),
                 circle.getName(),
                 circle.getDescription(),
                 circle.getMaxMembers(),
+                totalRounds,
                 circle.getTerm(),
                 circle.getContributionAmount(),
                 collateral,
