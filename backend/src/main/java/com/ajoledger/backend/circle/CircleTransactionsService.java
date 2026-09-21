@@ -49,6 +49,7 @@ public class CircleTransactionsService {
     private final UserAccountRepository userAccountRepository;
     private final CirclePayoutRepository circlePayoutRepository;
     private final CircleMembershipRepository circleMembershipRepository;
+    private final CircleMemberDebitAuthorizationRepository circleMemberDebitAuthorizationRepository;
     private final Map<String, CircleSizingPolicy> sizingPoliciesByType;
 
     private CircleSizingPolicy resolveSizingPolicy(Circle circle) {
@@ -178,9 +179,15 @@ public class CircleTransactionsService {
         UserAccount lien = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.LIEN);
         UserAccount buffer = userAccountRepository.requireByUserIdAndType(
                 Constants.Account.SYSTEM_USER_ID, UserAccountType.SYSTEM_BUFFER);
+        CircleMemberDebitAuthorization authorization = circleMemberDebitAuthorizationRepository
+                .findByCircleMembership_Id(circleMembershipId)
+                .orElseGet(() -> CircleMemberDebitAuthorization.builder()
+                        .circleMembership(circleMembershipRepository.getReferenceById(circleMembershipId))
+                        .remainingCeiling(groupLoss)
+                        .build());
 
         BigDecimal lienBalance = ledgerDao.getBalance(lien.getId());
-        BigDecimal seizedFromLien = lienBalance.min(groupLoss);
+        BigDecimal seizedFromLien = lienBalance.min(groupLoss).min(authorization.getRemainingCeiling());
         BigDecimal remainingLoss = groupLoss.subtract(seizedFromLien);
 
         return ledgerService.postLedgerOperation("DEFAULT_WATERFALL", circleMembershipId, operationId -> {
@@ -193,6 +200,9 @@ public class CircleTransactionsService {
                 transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":lien-seizure", "LIEN_SEIZURE",
                         LedgerTransactionType.LIEN_SEIZURE, seizedFromLien, lien.getCurrency(),
                         "Lien seizure for membership " + circleMembershipId, seizureLegs, operationId));
+
+                authorization.setRemainingCeiling(authorization.getRemainingCeiling().subtract(seizedFromLien));
+                circleMemberDebitAuthorizationRepository.save(authorization);
             }
 
             if (remainingLoss.signum() > 0) {

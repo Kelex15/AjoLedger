@@ -40,6 +40,7 @@ public class CircleRoundService {
     private final TransactionTemplate transactionTemplate;
     private final EmailSender emailSender;
     private final CircleTransactionsService circleTransactionsService;
+    private final CircleMemberDebitAuthorizationRepository circleMemberDebitAuthorizationRepository;
 
     public Set<UUID> getPaidRecipientIds(UUID circleId) {
         return new HashSet<>(circlePayoutRepository.findRecipientIdsByCircle_Id(circleId));
@@ -223,8 +224,25 @@ public class CircleRoundService {
             circle.setCurrentRound(circle.getCurrentRound() + 1);
             circle.setLastRoundAt(Instant.now());
             circleRepository.save(circle);
+            refreshDebitCeilings(circle);
             return null;
         });
+    }
+
+    /** Shrinks every still-ACTIVE member's debit ceiling to their live remaining exposure now
+     * that currentRound has advanced. A membership that defaulted this same pass is already
+     * DEFAULTED by markNonPayers before this runs, so it's excluded and never clobbered mid-seizure. */
+    private void refreshDebitCeilings(Circle circle) {
+        int totalRounds = resolveSizingPolicy(circle).getTotalRounds(circle);
+        BigDecimal remainingExposure = TrustCalculations.calculateGroupLoss(circle.getContributionAmount(), totalRounds,
+                circle.getCurrentRound() - 1);
+        for (CircleMembership membership : circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE)) {
+            CircleMemberDebitAuthorization authorization = circleMemberDebitAuthorizationRepository
+                    .findByCircleMembership_Id(membership.getId())
+                    .orElseGet(() -> CircleMemberDebitAuthorization.builder().circleMembership(membership).build());
+            authorization.setRemainingCeiling(remainingExposure);
+            circleMemberDebitAuthorizationRepository.save(authorization);
+        }
     }
 
     /** One atomic unit: the circle and every remaining member finish together, or not at all. */

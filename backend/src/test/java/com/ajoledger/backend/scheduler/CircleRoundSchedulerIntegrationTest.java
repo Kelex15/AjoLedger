@@ -20,6 +20,8 @@ import com.ajoledger.backend.account.AccountService;
 import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.circle.Circle;
 import com.ajoledger.backend.circle.CircleInvite;
+import com.ajoledger.backend.circle.CircleMemberDebitAuthorization;
+import com.ajoledger.backend.circle.CircleMemberDebitAuthorizationRepository;
 import com.ajoledger.backend.circle.CircleMembership;
 import com.ajoledger.backend.circle.CircleMembershipRepository;
 import com.ajoledger.backend.circle.CircleRepository;
@@ -59,6 +61,8 @@ class CircleRoundSchedulerIntegrationTest {
     private FundingService fundingService;
     @Autowired
     private CircleTransactionsService circleTransactionsService;
+    @Autowired
+    private CircleMemberDebitAuthorizationRepository circleMemberDebitAuthorizationRepository;
 
     private User createFundedUser(BigDecimal savingsBalance) {
         User user = userRepository.save(User.builder()
@@ -221,6 +225,133 @@ class CircleRoundSchedulerIntegrationTest {
             assertThat(entry.getValue().subtract(lienAfterDefault)).as("lien seized for defaulter %s", entry.getKey())
                     .isEqualByComparingTo("100.00");
         }
+    }
+
+    @Test
+    void ceilingMatchesLiveExposureRightAfterLock() {
+        User memberA = createFundedUser(new BigDecimal("110.00"));
+        User memberB = createFundedUser(new BigDecimal("110.00"));
+
+        CircleCreateRequestDTO dto = CircleCreateRequestDTO.builder()
+                .name("Two Member Circle")
+                .description("A circle for testing")
+                .sizingPolicyType(CircleSizingPolicyType.FIXED_SIZE)
+                .maxMembers(2)
+                .term(4)
+                .contributionAmount(new BigDecimal("100.00"))
+                .gated(false)
+                .build();
+
+        Circle circle = circleService.createCircle(memberA.getId(), dto);
+        circleService.joinCircle(memberB.getId(), circle.getId()); // locks + resolves round 1
+
+        List<CircleMembership> activeMembers = circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE);
+        assertThat(activeMembers).hasSize(2);
+        for (CircleMembership membership : activeMembers) {
+            CircleMemberDebitAuthorization authorization = circleMemberDebitAuthorizationRepository
+                    .findByCircleMembership_Id(membership.getId()).orElseThrow();
+            assertThat(authorization.getRemainingCeiling()).isEqualByComparingTo("100.00");
+        }
+    }
+
+    @Test
+    void ceilingShrinksAfterARoundResolvesWithoutDefault() {
+        User memberA = createFundedUser(new BigDecimal("1000.00"));
+        User memberB = createFundedUser(new BigDecimal("1000.00"));
+        User memberC = createFundedUser(new BigDecimal("1000.00"));
+
+        CircleCreateRequestDTO dto = CircleCreateRequestDTO.builder()
+                .name("Three Member Circle")
+                .description("A circle for testing")
+                .sizingPolicyType(CircleSizingPolicyType.FIXED_SIZE)
+                .maxMembers(3)
+                .term(4)
+                .contributionAmount(new BigDecimal("100.00"))
+                .gated(false)
+                .build();
+
+        Circle circle = circleService.createCircle(memberA.getId(), dto);
+        circleService.joinCircle(memberB.getId(), circle.getId());
+        circleService.joinCircle(memberC.getId(), circle.getId()); // locks + resolves round 1
+
+        CircleMembership someMembership = circleMembershipRepository
+                .findByCircle_IdAndStatus(circle.getId(), MembershipStatus.ACTIVE).get(0);
+        BigDecimal ceilingAfterRound1 = circleMemberDebitAuthorizationRepository
+                .findByCircleMembership_Id(someMembership.getId()).orElseThrow().getRemainingCeiling();
+
+        Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
+        reloaded.setLastRoundAt(Instant.now().minus(Duration.ofDays((reloaded.getTerm() + 1L) * 7)));
+        circleRepository.save(reloaded);
+
+        scheduler.runDueRoundChecks(); // everyone still has enough savings to pay round 2 - no default
+
+        BigDecimal ceilingAfterRound2 = circleMemberDebitAuthorizationRepository
+                .findByCircleMembership_Id(someMembership.getId()).orElseThrow().getRemainingCeiling();
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndStatus(circle.getId(), MembershipStatus.DEFAULTED)).isEmpty();
+        assertThat(ceilingAfterRound2).isLessThan(ceilingAfterRound1);
+        assertThat(ceilingAfterRound2).isEqualByComparingTo("100.00");
+    }
+
+    @Test
+    void defaultSeizureIsCappedByCeilingWhenSmallerThanGroupLoss() {
+        User memberA = createFundedUser(new BigDecimal("1000.00"));
+        User memberB = createFundedUser(new BigDecimal("1000.00"));
+
+        CircleCreateRequestDTO dto = CircleCreateRequestDTO.builder()
+                .name("Capped Ceiling Circle")
+                .description("A circle for testing")
+                .sizingPolicyType(CircleSizingPolicyType.FIXED_SIZE)
+                .maxMembers(2)
+                .term(4)
+                .contributionAmount(new BigDecimal("100.00"))
+                .gated(false)
+                .build();
+
+        Circle circle = circleService.createCircle(memberA.getId(), dto);
+        circleService.joinCircle(memberB.getId(), circle.getId());
+
+        CircleMembership recipientMembership = circleMembershipRepository
+                .findByCircle_IdAndUser_IdAndStatus(circle.getId(), memberA.getId(), MembershipStatus.ACTIVE)
+                .filter(m -> m.getPosition() != null && m.getPosition() == 1)
+                .orElseGet(() -> circleMembershipRepository
+                        .findByCircle_IdAndUser_IdAndStatus(circle.getId(), memberB.getId(), MembershipStatus.ACTIVE)
+                        .orElseThrow());
+        UUID recipientId = recipientMembership.getUser().getId();
+
+        circleTransactionsService.postLienHold(recipientId, new BigDecimal("100.00"), UUID.randomUUID().toString());
+
+        // Simulate the ceiling having less headroom than the $100 group loss - e.g. a member who
+        // already partly serviced their exposure through some other path this test doesn't model.
+        CircleMemberDebitAuthorization authorization = circleMemberDebitAuthorizationRepository
+                .findByCircleMembership_Id(recipientMembership.getId()).orElseThrow();
+        authorization.setRemainingCeiling(new BigDecimal("40.00"));
+        circleMemberDebitAuthorizationRepository.save(authorization);
+
+        for (User member : List.of(memberA, memberB)) {
+            BigDecimal balance = accountService.getUserAccount(member.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance();
+            if (balance.signum() > 0) {
+                fundingService.postWithdrawal(member.getId(), UserAccountType.SAVINGS, FundingType.STRIPE,
+                        balance, UUID.randomUUID().toString());
+            }
+        }
+
+        Circle reloaded = circleRepository.findById(circle.getId()).orElseThrow();
+        reloaded.setLastRoundAt(Instant.now().minus(Duration.ofDays((reloaded.getTerm() + 1L) * 7)));
+        circleRepository.save(reloaded);
+
+        BigDecimal lienBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+
+        scheduler.runDueRoundChecks();
+
+        BigDecimal lienAfterDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+
+        assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(circle.getId(), recipientId, MembershipStatus.DEFAULTED))
+                .isPresent();
+        // Capped at the $40 ceiling, not the full $100 group loss.
+        assertThat(lienBeforeDefault.subtract(lienAfterDefault)).isEqualByComparingTo("40.00");
+        assertThat(circleMemberDebitAuthorizationRepository.findByCircleMembership_Id(recipientMembership.getId())
+                .orElseThrow().getRemainingCeiling()).isEqualByComparingTo("0.00");
     }
 
     @Test

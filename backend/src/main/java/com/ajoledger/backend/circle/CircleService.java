@@ -54,6 +54,7 @@ public class CircleService {
     private final CircleAccountRepository circleAccountRepository;
     private final CircleMembershipRepository circleMembershipRepository;
     private final CircleInviteRepository circleInviteRepository;
+    private final CircleMemberDebitAuthorizationRepository circleMemberDebitAuthorizationRepository;
     private final Map<String, CircleSizingPolicy> sizingPoliciesByType;
     private final AccountService accountService;
     private final UserRepository userRepository;
@@ -225,8 +226,16 @@ public class CircleService {
         circle.setLockedMemberCount(members.size());
 
         for (CircleMemberStanding standing : rankByReputation(circle, members)) {
-            standing.membership().setPosition(standing.payoutPosition());
-            circleMembershipRepository.save(standing.membership());
+            CircleMembership membership = standing.membership();
+            membership.setPosition(standing.payoutPosition());
+            circleMembershipRepository.save(membership);
+
+            BigDecimal initialCeiling = resolveSizingPolicy(circle)
+                    .calculateRealizedGroupLoss(circle, members.size(), standing.payoutPosition());
+            circleMemberDebitAuthorizationRepository.save(CircleMemberDebitAuthorization.builder()
+                    .circleMembership(membership)
+                    .remainingCeiling(initialCeiling)
+                    .build());
         }
 
         circle.setStatus(CircleStatus.ACTIVE);
