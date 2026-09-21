@@ -8,6 +8,12 @@ import { queryKeys } from '../api/queryKeys'
 import { lienHold, lienWithdraw, transfer } from '../api/transactions'
 import { useAuth } from '../auth/useAuth'
 import { ErrorMessage } from '../components/ErrorMessage'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 export function DashboardPage() {
   const { user } = useAuth()
@@ -136,177 +142,254 @@ export function DashboardPage() {
   }
 
   return (
-    <div>
-      <h1>Welcome, {user?.firstName}</h1>
+    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <h1 className="text-2xl font-semibold">Welcome, {user?.firstName}</h1>
 
-      <h2>Balances</h2>
-      {isLoading && <p>Loading…</p>}
-      {accounts && (
-        <ul>
-          {accounts.map((account) => (
-            <li key={account.accountNumber}>
-              {account.accountType}: {account.balance.toFixed(2)} {account.currency}
-            </li>
-          ))}
-        </ul>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Balances</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {accounts && (
+            <ul className="flex flex-col gap-1 text-sm">
+              {accounts.map((account) => (
+                <li key={account.accountNumber} className="flex justify-between">
+                  <span>{account.accountType}</span>
+                  <span>
+                    {account.balance.toFixed(2)} {account.currency}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
-      <h2>Deposit funds</h2>
-      <p>Deposits always land in Checking.</p>
-      <form onSubmit={handleDeposit}>
-        <label>
-          Via
-          <select value={fundingType} onChange={(event) => setFundingType(event.target.value as FundingType)}>
-            <option value="STRIPE">Stripe</option>
-            <option value="PAYPAL">PayPal</option>
-          </select>
-        </label>
+      <Card>
+        <CardHeader>
+          <CardTitle>Deposit funds</CardTitle>
+          <CardDescription>Deposits always land in Checking.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleDeposit} className="flex flex-col gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="deposit-via">Via</Label>
+              <Select value={fundingType} onValueChange={(value) => setFundingType(value as FundingType)}>
+                <SelectTrigger id="deposit-via">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="STRIPE">Stripe</SelectItem>
+                  <SelectItem value="PAYPAL">PayPal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        <label>
-          Amount
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            required
-          />
-        </label>
-
-        <ErrorMessage message={error} />
-
-        <button type="submit" disabled={depositMutation.isPending}>
-          {depositMutation.isPending ? 'Depositing…' : 'Deposit'}
-        </button>
-      </form>
-
-      <h2>Withdraw funds</h2>
-      <p>Withdrawals always draw from Checking.</p>
-      <form onSubmit={handleWithdraw}>
-        <label>
-          Via
-          <select
-            value={withdrawFundingType}
-            onChange={(event) => setWithdrawFundingType(event.target.value as FundingType)}
-          >
-            <option value="STRIPE">Stripe</option>
-            <option value="PAYPAL">PayPal</option>
-          </select>
-        </label>
-
-        <label>
-          Amount
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={withdrawAmount}
-            onChange={(event) => setWithdrawAmount(event.target.value)}
-            required
-          />
-        </label>
-
-        <ErrorMessage message={withdrawError} />
-
-        <button type="submit" disabled={withdrawMutation.isPending}>
-          {withdrawMutation.isPending ? 'Withdrawing…' : 'Withdraw'}
-        </button>
-      </form>
-
-      <h2>Transfer between accounts</h2>
-      <form onSubmit={handleTransfer}>
-        <label>
-          From account
-          <select
-            value={transferFromType}
-            onChange={(event) => setTransferFromType(event.target.value as UserAccountType)}
-          >
-            <option value="CHECKING">Checking</option>
-            <option value="SAVINGS">Savings</option>
-            <option value="LIEN">Lien</option>
-          </select>
-        </label>
-
-        <label>
-          <input
-            type="checkbox"
-            checked={transferToAnotherUser}
-            onChange={(event) => setTransferToAnotherUser(event.target.checked)}
-          />
-          Send to another user
-        </label>
-
-        {transferToAnotherUser ? (
-          <>
-            <label>
-              Username
-              <input
-                value={transferToUsername}
-                onChange={(event) => setTransferToUsername(event.target.value)}
+            <div className="grid gap-1.5">
+              <Label htmlFor="deposit-amount">Amount</Label>
+              <Input
+                id="deposit-amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
                 required
               />
-            </label>
-            <p>Lands in their Checking account.</p>
-          </>
-        ) : (
-          <label>
-            To account
-            <select value={transferToType} onChange={(event) => setTransferToType(event.target.value as UserAccountType)}>
-              <option value="CHECKING">Checking</option>
-              <option value="SAVINGS">Savings</option>
-              <option value="LIEN">Lien</option>
-            </select>
-          </label>
-        )}
+            </div>
 
-        <label>
-          Amount
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={transferAmount}
-            onChange={(event) => setTransferAmount(event.target.value)}
-            required
-          />
-        </label>
+            <ErrorMessage message={error} />
 
-        <ErrorMessage message={transferError} />
+            <Button type="submit" disabled={depositMutation.isPending}>
+              {depositMutation.isPending ? 'Depositing…' : 'Deposit'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
-        <button type="submit" disabled={transferMutation.isPending}>
-          {transferMutation.isPending ? 'Transferring…' : 'Transfer'}
-        </button>
-      </form>
+      <Card>
+        <CardHeader>
+          <CardTitle>Withdraw funds</CardTitle>
+          <CardDescription>Withdrawals always draw from Checking.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleWithdraw} className="flex flex-col gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="withdraw-via">Via</Label>
+              <Select
+                value={withdrawFundingType}
+                onValueChange={(value) => setWithdrawFundingType(value as FundingType)}
+              >
+                <SelectTrigger id="withdraw-via">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="STRIPE">Stripe</SelectItem>
+                  <SelectItem value="PAYPAL">PayPal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-      <h2>Lien</h2>
-      {lien && (
-        <ul>
-          <li>Balance: {lien.balance.toFixed(2)} {lien.currency}</li>
-          <li>Withdrawal floor: {lien.withdrawalFloor.toFixed(2)} {lien.currency}</li>
-          <li>Withdrawable: {lien.withdrawable.toFixed(2)} {lien.currency}</li>
-        </ul>
-      )}
+            <div className="grid gap-1.5">
+              <Label htmlFor="withdraw-amount">Amount</Label>
+              <Input
+                id="withdraw-amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={withdrawAmount}
+                onChange={(event) => setWithdrawAmount(event.target.value)}
+                required
+              />
+            </div>
 
-      <label>
-        Amount
-        <input
-          type="number"
-          min="0.01"
-          step="0.01"
-          value={lienAmount}
-          onChange={(event) => setLienAmount(event.target.value)}
-        />
-      </label>
+            <ErrorMessage message={withdrawError} />
 
-      <ErrorMessage message={lienError} />
+            <Button type="submit" disabled={withdrawMutation.isPending}>
+              {withdrawMutation.isPending ? 'Withdrawing…' : 'Withdraw'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
-      <button onClick={handleLienHold} disabled={lienHoldMutation.isPending || !lienAmount}>
-        {lienHoldMutation.isPending ? 'Adding…' : 'Add to lien'}
-      </button>{' '}
-      <button onClick={handleLienWithdraw} disabled={lienWithdrawMutation.isPending || !lienAmount}>
-        {lienWithdrawMutation.isPending ? 'Withdrawing…' : 'Withdraw from lien'}
-      </button>
+      <Card>
+        <CardHeader>
+          <CardTitle>Transfer between accounts</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleTransfer} className="flex flex-col gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="transfer-from">From account</Label>
+              <Select
+                value={transferFromType}
+                onValueChange={(value) => setTransferFromType(value as UserAccountType)}
+              >
+                <SelectTrigger id="transfer-from">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CHECKING">Checking</SelectItem>
+                  <SelectItem value="SAVINGS">Savings</SelectItem>
+                  <SelectItem value="LIEN">Lien</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="transfer-to-another-user"
+                checked={transferToAnotherUser}
+                onCheckedChange={(checked) => setTransferToAnotherUser(checked === true)}
+              />
+              <Label htmlFor="transfer-to-another-user">Send to another user</Label>
+            </div>
+
+            {transferToAnotherUser ? (
+              <div className="grid gap-1.5">
+                <Label htmlFor="transfer-username">Username</Label>
+                <Input
+                  id="transfer-username"
+                  value={transferToUsername}
+                  onChange={(event) => setTransferToUsername(event.target.value)}
+                  required
+                />
+                <p className="text-sm text-muted-foreground">Lands in their Checking account.</p>
+              </div>
+            ) : (
+              <div className="grid gap-1.5">
+                <Label htmlFor="transfer-to">To account</Label>
+                <Select value={transferToType} onValueChange={(value) => setTransferToType(value as UserAccountType)}>
+                  <SelectTrigger id="transfer-to">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CHECKING">Checking</SelectItem>
+                    <SelectItem value="SAVINGS">Savings</SelectItem>
+                    <SelectItem value="LIEN">Lien</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="grid gap-1.5">
+              <Label htmlFor="transfer-amount">Amount</Label>
+              <Input
+                id="transfer-amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={transferAmount}
+                onChange={(event) => setTransferAmount(event.target.value)}
+                required
+              />
+            </div>
+
+            <ErrorMessage message={transferError} />
+
+            <Button type="submit" disabled={transferMutation.isPending}>
+              {transferMutation.isPending ? 'Transferring…' : 'Transfer'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Lien</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {lien && (
+            <ul className="flex flex-col gap-1 text-sm">
+              <li className="flex justify-between">
+                <span>Balance</span>
+                <span>
+                  {lien.balance.toFixed(2)} {lien.currency}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span>Withdrawal floor</span>
+                <span>
+                  {lien.withdrawalFloor.toFixed(2)} {lien.currency}
+                </span>
+              </li>
+              <li className="flex justify-between">
+                <span>Withdrawable</span>
+                <span>
+                  {lien.withdrawable.toFixed(2)} {lien.currency}
+                </span>
+              </li>
+            </ul>
+          )}
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="lien-amount">Amount</Label>
+            <Input
+              id="lien-amount"
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={lienAmount}
+              onChange={(event) => setLienAmount(event.target.value)}
+            />
+          </div>
+
+          <ErrorMessage message={lienError} />
+
+          <div className="flex gap-2">
+            <Button onClick={handleLienHold} disabled={lienHoldMutation.isPending || !lienAmount}>
+              {lienHoldMutation.isPending ? 'Adding…' : 'Add to lien'}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleLienWithdraw}
+              disabled={lienWithdrawMutation.isPending || !lienAmount}
+            >
+              {lienWithdrawMutation.isPending ? 'Withdrawing…' : 'Withdraw from lien'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

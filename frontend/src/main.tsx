@@ -6,6 +6,8 @@ import App from './App.tsx'
 import { ApiError } from './api/client'
 import { queryKeys } from './api/queryKeys'
 import { AuthProvider } from './auth/AuthProvider'
+import { ThemeProvider } from './theme/ThemeProvider'
+import './index.css'
 
 // A 401 that reaches here means apiFetch already tried a silent refresh-and-retry and it still
 // failed - the refresh token itself is gone, not just the short-lived access token. Flipping
@@ -24,12 +26,14 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>,
 )

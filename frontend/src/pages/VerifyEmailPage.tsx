@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { ApiError } from '../api/client'
 import { verifyEmail } from '../api/auth'
+import { AuthLayout } from '../components/AuthLayout'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export function VerifyEmailPage() {
   const [searchParams] = useSearchParams()
@@ -34,11 +36,21 @@ export function VerifyEmailPage() {
   }, [token])
 
   return (
-    <div>
-      <h1>Email verification</h1>
-      {status === 'pending' && <p>Verifying…</p>}
-      {status !== 'pending' && <p>{message}</p>}
-      {status === 'success' && <Link to="/login">Log in</Link>}
-    </div>
+    <AuthLayout>
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle>Email verification</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {status === 'pending' && <p className="text-sm text-muted-foreground">Verifying…</p>}
+          {status !== 'pending' && <p className="text-sm text-muted-foreground">{message}</p>}
+          {status === 'success' && (
+            <Link to="/login" className="text-sm text-foreground underline underline-offset-4">
+              Log in
+            </Link>
+          )}
+        </CardContent>
+      </Card>
+    </AuthLayout>
   )
 }

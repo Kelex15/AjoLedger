@@ -1,6 +1,12 @@
+import { Alert, AlertDescription } from '@/components/ui/alert'
+
 export function ErrorMessage({ message }: { message: string | null }) {
   if (!message) {
     return null
   }
-  return <p role="alert">{message}</p>
+  return (
+    <Alert variant="destructive">
+      <AlertDescription>{message}</AlertDescription>
+    </Alert>
+  )
 }
