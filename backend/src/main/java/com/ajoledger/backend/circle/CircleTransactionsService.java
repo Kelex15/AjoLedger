@@ -12,6 +12,7 @@ import com.ajoledger.backend.ledger.LedgerService;
 import com.ajoledger.backend.ledger.LedgerTransactionType;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.ledger.exception.LienWithdrawalBlockedException;
+import com.ajoledger.backend.ledger.idempotency.IdempotencyKeys;
 import com.ajoledger.backend.system.Constants;
 
 import lombok.RequiredArgsConstructor;
@@ -111,14 +112,14 @@ public class CircleTransactionsService {
                     List.of(new Leg(circlePotAccountId, net, BigDecimal.ZERO), new Leg(savings.getId(), BigDecimal.ZERO, net)),
                     operationId);
 
-            ledgerService.postLedgerTransaction(idempotencyKey + ":buffer-fee", "PAYOUT_BUFFER_FEE",
+            ledgerService.postLedgerTransaction(IdempotencyKeys.of(idempotencyKey, "buffer-fee"), "PAYOUT_BUFFER_FEE",
                     LedgerTransactionType.PAYOUT_BUFFER_FEE, bufferFee, buffer.getCurrency(),
                     "Buffer fee for circle payout " + circlePayoutId,
                     List.of(new Leg(circlePotAccountId, bufferFee, BigDecimal.ZERO), new Leg(buffer.getId(), BigDecimal.ZERO, bufferFee)),
                     operationId);
 
             if (lienShare.signum() > 0) {
-                ledgerService.postLedgerTransaction(idempotencyKey + ":lien-skim", "PAYOUT_LIEN_SKIM",
+                ledgerService.postLedgerTransaction(IdempotencyKeys.of(idempotencyKey, "lien-skim"), "PAYOUT_LIEN_SKIM",
                         LedgerTransactionType.PAYOUT_LIEN_SKIM, lienShare, lien.getCurrency(),
                         "Lien skim for circle payout " + circlePayoutId,
                         List.of(new Leg(circlePotAccountId, lienShare, BigDecimal.ZERO), new Leg(lien.getId(), BigDecimal.ZERO, lienShare)),
@@ -189,7 +190,7 @@ public class CircleTransactionsService {
         List<Leg> legs = List.of(
                 new Leg(account.getId(), amount, BigDecimal.ZERO),
                 new Leg(circleReserveAccountId, BigDecimal.ZERO, amount));
-        transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":" + idempotencySuffix, type.name(), type,
+        transactions.add(ledgerService.postLedgerTransaction(IdempotencyKeys.of(idempotencyKey, idempotencySuffix), type.name(), type,
                 amount, account.getCurrency(), description, legs, operationId));
     }
 
@@ -239,7 +240,7 @@ public class CircleTransactionsService {
                     List<Leg> bufferLegs = List.of(
                             new Leg(buffer.getId(), bufferPayout, BigDecimal.ZERO),
                             new Leg(circleReserveAccountId, BigDecimal.ZERO, bufferPayout));
-                    transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":buffer-payout", "BUFFER_PAYOUT_TO_COVER_DEFAULT",
+                    transactions.add(ledgerService.postLedgerTransaction(IdempotencyKeys.of(idempotencyKey, "buffer-payout"), "BUFFER_PAYOUT_TO_COVER_DEFAULT",
                             LedgerTransactionType.BUFFER_PAYOUT_TO_COVER_DEFAULT, bufferPayout, buffer.getCurrency(),
                             "Buffer payout covering default for membership " + circleMembershipId, bufferLegs, operationId));
                 }
@@ -291,7 +292,7 @@ public class CircleTransactionsService {
                 List<Leg> reserveLegs = List.of(
                         new Leg(reserveAccountId, reserveBalance, BigDecimal.ZERO),
                         new Leg(potAccountId, BigDecimal.ZERO, reserveBalance));
-                transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":reserve-sweep", "CIRCLE_RESERVE_DISBURSEMENT",
+                transactions.add(ledgerService.postLedgerTransaction(IdempotencyKeys.of(idempotencyKey, "reserve-sweep"), "CIRCLE_RESERVE_DISBURSEMENT",
                         LedgerTransactionType.CIRCLE_RESERVE_DISBURSEMENT, reserveBalance, currency,
                         "Reserve swept into pot for circle " + circleId + " completion", reserveLegs, operationId));
             }
@@ -307,7 +308,7 @@ public class CircleTransactionsService {
                 List<Leg> feeLegs = List.of(
                         new Leg(potAccountId, bufferFee, BigDecimal.ZERO),
                         new Leg(buffer.getId(), BigDecimal.ZERO, bufferFee));
-                transactions.add(ledgerService.postLedgerTransaction(idempotencyKey + ":buffer-fee", "PAYOUT_BUFFER_FEE",
+                transactions.add(ledgerService.postLedgerTransaction(IdempotencyKeys.of(idempotencyKey, "buffer-fee"), "PAYOUT_BUFFER_FEE",
                         LedgerTransactionType.PAYOUT_BUFFER_FEE, bufferFee, currency,
                         "Withdrawal refund buffer fee for circle " + circleId, feeLegs, operationId));
             }
@@ -325,7 +326,7 @@ public class CircleTransactionsService {
                 BigDecimal amount = roundAmount(perRoundShare.multiply(BigDecimal.valueOf(share.roundsContributed())));
                 if (amount.signum() > 0) {
                     transactions.add(postContributionRefund(share.userId(), circleId, potAccountId, amount,
-                            idempotencyKey + ":" + share.membershipId(), operationId));
+                            IdempotencyKeys.of(idempotencyKey, share.membershipId()), operationId));
                 }
             }
             return transactions;

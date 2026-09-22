@@ -19,6 +19,7 @@ import com.ajoledger.backend.circle.exception.InviteNotFoundException;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
 import com.ajoledger.backend.email.EmailSender;
 import com.ajoledger.backend.ledger.LedgerDao;
+import com.ajoledger.backend.ledger.idempotency.IdempotencyKeys;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
@@ -204,9 +205,9 @@ public class CircleService {
         // circle they've previously left/been removed from, and a static key would collide with
         // the earlier cycle's already-succeeded idempotency record, silently skipping the debit.
         circleTransactionsService.postContribution(userId, circleId, pot.getId(), circle.getContributionAmount(),
-                membership.getId() + ":join");
+                IdempotencyKeys.of(membership.getId(), "join"));
         BigDecimal collateral = calculateJoinCollateral(circle);
-        circleTransactionsService.postLienHold(userId, collateral, membership.getId() + ":join-collateral");
+        circleTransactionsService.postLienHold(userId, collateral, IdempotencyKeys.of(membership.getId(), "join-collateral"));
         membership.setLastContributedRound(circle.getCurrentRound());
         circleMembershipRepository.save(membership);
 
@@ -345,7 +346,7 @@ public class CircleService {
         for (CircleMembership membership : circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE)) {
             UUID userId = membership.getUser().getId();
             circleTransactionsService.postContributionRefund(userId, circleId, pot.getId(), circle.getContributionAmount(),
-                    membership.getId() + ":dissolve-refund");
+                    IdempotencyKeys.of(membership.getId(), "dissolve-refund"));
             membership.setStatus(MembershipStatus.DISSOLVED);
             circleMembershipRepository.save(membership);
         }
@@ -422,7 +423,7 @@ public class CircleService {
         // Keyed by this membership row's own id - see the matching comment in joinCircle for why
         // a static circleId:userId key isn't safe once a member can go through this cycle more than once.
         circleTransactionsService.postContributionRefund(memberUserId, circleId, pot.getId(), circle.getContributionAmount(),
-                membership.getId() + ":remove-refund");
+                IdempotencyKeys.of(membership.getId(), "remove-refund"));
         circleMembershipRepository.delete(membership);
     }
 
@@ -447,7 +448,7 @@ public class CircleService {
 
         CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
         circleTransactionsService.postContributionRefund(memberUserId, circleId, pot.getId(), circle.getContributionAmount(),
-                membership.getId() + ":ban-refund");
+                IdempotencyKeys.of(membership.getId(), "ban-refund"));
         membership.setStatus(MembershipStatus.BANNED);
         circleMembershipRepository.save(membership);
     }
@@ -469,7 +470,7 @@ public class CircleService {
 
         CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
         circleTransactionsService.postContributionRefund(userId, circleId, pot.getId(), circle.getContributionAmount(),
-                membership.getId() + ":leave-refund");
+                IdempotencyKeys.of(membership.getId(), "leave-refund"));
         circleMembershipRepository.delete(membership);
     }
 

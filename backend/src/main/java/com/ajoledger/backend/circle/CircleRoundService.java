@@ -8,6 +8,7 @@ import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
 import com.ajoledger.backend.email.EmailSender;
 import com.ajoledger.backend.ledger.LedgerDao;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
+import com.ajoledger.backend.ledger.idempotency.IdempotencyKeys;
 import com.ajoledger.backend.user.User;
 
 import lombok.RequiredArgsConstructor;
@@ -86,7 +87,8 @@ public class CircleRoundService {
             CircleMembership membership = circleMembershipRepository.findById(membershipId).orElseThrow();
             try {
                 circleTransactionsService.postContribution(membership.getUser().getId(), circle.getId(), potAccountId,
-                        circle.getContributionAmount(), circle.getId() + ":" + membership.getId() + ":round-" + circle.getCurrentRound());
+                        circle.getContributionAmount(),
+                        IdempotencyKeys.of(circle.getId(), membership.getId(), "round-" + circle.getCurrentRound()));
                 membership.setLastContributedRound(circle.getCurrentRound());
                 circleMembershipRepository.save(membership);
             } catch (InsufficientBalanceException e) {
@@ -129,7 +131,7 @@ public class CircleRoundService {
                 // seized. If this throws, the membership stays ACTIVE so the next scheduler pass
                 // retries instead of leaving a defaulted membership with nothing recovered.
                 circleTransactionsService.postDefaultWaterfall(user.getId(), membership.getId(), reserveAccountId, groupLoss,
-                        circle.getId() + ":" + membership.getId() + ":default-round-" + circle.getCurrentRound());
+                        IdempotencyKeys.of(circle.getId(), membership.getId(), "default-round-" + circle.getCurrentRound()));
 
                 membership.setStatus(MembershipStatus.DEFAULTED);
                 circleMembershipRepository.save(membership);
@@ -219,7 +221,7 @@ public class CircleRoundService {
             BigDecimal groupLoss = resolveSizingPolicy(circle)
                     .calculatePotentialGroupLoss(circle, recipient, recipientMembership.getPosition());
             circleTransactionsService.postPayout(pot.getId(), payout.getId(), recipient.getId(), grossAmount, groupLoss,
-                    circleId + ":" + recipientMembership.getId() + ":payout-round-" + circle.getCurrentRound());
+                    IdempotencyKeys.of(circleId, recipientMembership.getId(), "payout-round-" + circle.getCurrentRound()));
 
             circle.setCurrentRound(circle.getCurrentRound() + 1);
             circle.setLastRoundAt(Instant.now());
@@ -275,7 +277,7 @@ public class CircleRoundService {
                         m.getLastContributedRound() == null ? 0 : m.getLastContributedRound()))
                 .toList();
         circleTransactionsService.postCircleCompletionRefunds(circleId, reserve.getId(), pot.getId(), pot.getCurrency(),
-                shares, circleId + ":completion-refund");
+                shares, IdempotencyKeys.of(circleId, "completion-refund"));
     }
 
     /** Spreads the reserve's current balance evenly across the rounds still ahead, rather than
@@ -293,7 +295,7 @@ public class CircleRoundService {
         BigDecimal releaseAmount = roundAmount(reserveBalance.divide(BigDecimal.valueOf(roundsRemaining), 10, RoundingMode.HALF_UP));
 
         circleTransactionsService.postReserveRelease(reserve.getId(), pot.getId(), releaseAmount, reserve.getCurrency(),
-                circle.getCurrentRound(), circleId + ":reserve-release-round-" + circle.getCurrentRound());
+                circle.getCurrentRound(), IdempotencyKeys.of(circleId, "reserve-release-round-" + circle.getCurrentRound()));
     }
 
     private List<CircleMembership> unpaidActiveMemberships(Circle circle) {
