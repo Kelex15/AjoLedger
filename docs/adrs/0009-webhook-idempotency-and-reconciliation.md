@@ -1,0 +1,35 @@
+# ADR 0009: Webhook Event Idempotency and Reconciliation Policy for Sandbox Payments
+
+**Status:** Accepted
+
+## Context
+
+`FundingController`/`FundingService` today are an explicit stand-in for Phase 6: a caller credits or debits their own `CHECKING` account directly by hitting `/api/funding/deposit`/`withdraw`, with no processor behind it at all. `UserAccountType.CLEARING_STRIPE`/`CLEARING_PAYPAL` exist only as enum labels. Real Phase 6 work replaces that with an actual Stripe sandbox integration: a hosted checkout flow, a webhook that confirms payment asynchronously, and funds landing in `CHECKING` only once Stripe confirms, not on the initiating API call.
+
+Two things about that flow don't have an existing answer in this codebase, and I want to settle them before writing any of it. I'm treating Stripe-only scope (PayPal stays a `FundingType`/`UserAccountType` label with no processor code) and where the code lives (`funding/stripe/`) as established context here, not decisions this ADR needs to weigh. Neither has a real alternative architecture behind it; they're scope and package-placement calls, not tradeoffs with consequences for the data model.
+
+**Webhook idempotency.** Stripe delivers webhook events at-least-once. The same event can arrive twice, and delivery can arrive out of order relative to other events. The ledger write path already has an idempotency mechanism (`idempotency_key` table, `IdempotencyDao.claim()`), but it's built for client-initiated requests: a caller supplies a key, and a second call with the same key either replays the first result or is rejected as a conflict if the request body differs. A webhook event isn't that. Its identity is Stripe's `event.id`, not anything the caller chose, and a redelivery of the same event is never a "conflicting" request. It's the literal same event arriving twice, and it should be processed exactly once regardless of how many times Stripe sends it.
+
+**Reconciliation.** A webhook can fail to arrive at all: a deploy mid-delivery, a transient failure on my endpoint, a bug that throws before the DB write commits. When that happens, Stripe believes the payment succeeded but nothing lands in the ledger, and nothing today would ever notice.
+
+## Decision
+
+**A dedicated `processed_webhook_event` table**, not a reuse of `idempotency_key`. Columns: `processor`, `event_id`, `raw_payload`, `received_at`, `processed_at`, `ledger_transaction_id`, with a unique constraint on `(processor, event_id)`. The webhook handler claims a row for `(processor, event_id)` before doing any ledger write; a redelivery finds the row already `processed_at`-stamped and returns success without reprocessing, while a redelivery of an event whose prior attempt failed (no `processed_at`) retries the processing rather than being treated as claimed. Keying on `(processor, event_id)` rather than just `event_id` means this table isn't Stripe-specific. If PayPal's webhook ever goes from stub to real, it's the same table, just a different `processor` value.
+
+**A scheduled reconciliation job**, following the existing `CircleRoundScheduler` shape (`@Component`, `@Scheduled(cron = "${...}")`, a public entry point delegating to a package-visible worker, per-item try/catch so one bad comparison doesn't sink the run). For a lookback window, it pulls Stripe's confirmed payments and compares both directions: every Stripe-confirmed payment should have a matching `processed_webhook_event` row with a `ledger_transaction_id` whose amount agrees, and every ledger transaction tagged as Stripe-sourced should still be a payment Stripe recognizes. Every mismatch is logged at `ERROR` and written to a `reconciliation_mismatch` row: `processor`, `event_id`, mismatch type (`MISSING_LEDGER_ENTRY` / `MISSING_STRIPE_RECORD` / `AMOUNT_MISMATCH`), expected vs. actual amount, timestamp. The job never writes to the ledger or to `account.balance`. It only observes and records.
+
+## Alternatives considered
+
+Reusing `idempotency_key` for webhook events, with `requestType = 'STRIPE_WEBHOOK_EVENT'` and `idempotencyKey = event.id`. Less new schema, and `claim()`/`markSucceeded()`/`markFailed()` already do most of the mechanical work. Rejected because the table's conflict semantics don't fit: it's built to detect a client reusing a key for a genuinely different request, which can't happen with a webhook since the same `event.id` is always the same event. Forcing it through that model also means an in-progress or failed webhook attempt looks identical to a rejected conflict, when what I actually want on redelivery of a failed attempt is a retry, not a rejection.
+
+Auto-correcting reconciliation mismatches that look safe, for example a Stripe-confirmed payment with no conflicting ledger entry, which looks like a straightforward "webhook was lost, so post it now." Rejected because getting that classification right in every case is exactly the kind of judgment call I don't trust an unattended job with on money movement. A timing edge case (the webhook is simply still in flight when the job runs) and a genuinely lost webhook look identical from the job's side, and treating the former as the latter means auto-posting a transaction that's about to arrive for real. Log-and-alert keeps a human in the loop for the one call that actually needs one, at the cost of mismatches sitting unresolved until someone looks. That's an acceptable cost here since this is sandbox money, not real settlement.
+
+Publishing webhook events onto a queue (Kafka, SQS) instead of processing them in the same request, with `processed_webhook_event` acting as an outbox. Not rejected on the merits, this is the actual direction `funding` is headed once it's extracted into its own service, at which point a real dual-write problem exists (funding-service's database and the queue are separate systems) and an outbox genuinely earns its place. Rejected for now specifically because that extraction hasn't happened yet. While `funding` and the ledger share one Postgres instance, claiming the idempotency row and posting the ledger transaction can just be one local ACID transaction, so a queue would add a broker, a consumer, and a second failure mode to solve a problem this codebase doesn't have yet. Revisit this decision, not the reasoning, when the extraction ADR lands.
+
+## Consequences
+
+Two new tables (`processed_webhook_event`, `reconciliation_mismatch`), one migration. `processed_webhook_event` storing `raw_payload` isn't just for debugging. Once a human confirms a mismatch is a lost webhook, that payload is what makes manual replay possible without going back to Stripe's API.
+
+The reconciliation job's lookback window has to be wider than its own run interval, or a single missed run creates a permanent blind spot for whatever fell in the gap.
+
+This doesn't touch the general ledger tamper-evidence and checkpointing question raised separately. A hash-chain verification job would face the same log-and-alert-vs-auto-correct choice reconciliation just made here, applied to a broken chain instead of a payment mismatch, but that's tracked as its own thread, not part of this ADR.
