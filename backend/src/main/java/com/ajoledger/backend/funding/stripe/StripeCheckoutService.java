@@ -38,8 +38,8 @@ public class StripeCheckoutService {
 
         SessionCreateParams params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
-                .setSuccessUrl(frontendBaseUrl + "/wallet?depositStatus=success")
-                .setCancelUrl(frontendBaseUrl + "/wallet?depositStatus=cancelled")
+                .setSuccessUrl(frontendBaseUrl + "/?depositStatus=success")
+                .setCancelUrl(frontendBaseUrl + "/?depositStatus=cancelled")
                 .putMetadata("userId", userId.toString())
                 .putMetadata("idempotencyKey", idempotencyKey)
                 .addLineItem(SessionCreateParams.LineItem.builder()

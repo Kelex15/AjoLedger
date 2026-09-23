@@ -16,8 +16,15 @@ export interface DepositFields {
   amount: number
 }
 
+// Exactly one field is set: transaction when the deposit completed synchronously, checkoutUrl
+// when it's pending and the caller should redirect there to finish it with Stripe.
+export interface DepositResult {
+  transaction: FundingTransaction | null
+  checkoutUrl: string | null
+}
+
 export function deposit(fields: DepositFields) {
-  return apiFetch<FundingTransaction>('/api/funding/deposit', {
+  return apiFetch<DepositResult>('/api/funding/deposit', {
     method: 'POST',
     body: JSON.stringify({ ...fields, idempotencyKey: crypto.randomUUID() }),
   })

@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router'
 import type { UserAccountType } from '../api/accounts'
 import { fetchLienStatus, fetchMyAccounts } from '../api/accounts'
 import { ApiError } from '../api/client'
@@ -8,6 +9,7 @@ import { queryKeys } from '../api/queryKeys'
 import { lienHold, lienWithdraw, transfer } from '../api/transactions'
 import { useAuth } from '../auth/useAuth'
 import { ErrorMessage } from '../components/ErrorMessage'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -28,9 +30,32 @@ export function DashboardPage() {
   const [amount, setAmount] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  // Landed back here from Stripe's hosted checkout. The deposit itself is confirmed by the
+  // webhook, not this redirect, so this banner is just UI feedback, not the source of truth.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [depositBanner, setDepositBanner] = useState<'success' | 'cancelled' | null>(null)
+  useEffect(() => {
+    const depositStatus = searchParams.get('depositStatus')
+    if (depositStatus !== 'success' && depositStatus !== 'cancelled') {
+      return
+    }
+    setDepositBanner(depositStatus)
+    if (depositStatus === 'success') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
+    }
+    setSearchParams((params) => {
+      params.delete('depositStatus')
+      return params
+    }, { replace: true })
+  }, [searchParams, queryClient, setSearchParams])
+
   const depositMutation = useMutation({
     mutationFn: deposit,
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (result.checkoutUrl) {
+        window.location.href = result.checkoutUrl
+        return
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
       setAmount('')
     },
@@ -172,6 +197,16 @@ export function DashboardPage() {
           <CardDescription>Deposits always land in Checking.</CardDescription>
         </CardHeader>
         <CardContent>
+          {depositBanner === 'success' && (
+            <Alert className="mb-4">
+              <AlertDescription>Payment received. Your balance will update shortly.</AlertDescription>
+            </Alert>
+          )}
+          {depositBanner === 'cancelled' && (
+            <Alert className="mb-4">
+              <AlertDescription>Checkout cancelled, no funds were moved.</AlertDescription>
+            </Alert>
+          )}
           <form onSubmit={handleDeposit} className="flex flex-col gap-4">
             <div className="grid gap-1.5">
               <Label htmlFor="deposit-via">Via</Label>
