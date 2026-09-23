@@ -85,7 +85,7 @@ public class LedgerService {
     }
 
     /** Groups every LedgerTransaction posted inside body under one LedgerOperation, and wraps
-     * the whole thing in one atomic boundary - any failure rolls back everything body did so far. */
+     * the whole thing in one atomic boundary */
     public <T> T postLedgerOperation(String operationType, UUID referenceId, Function<UUID, T> body) {
         return transactionTemplate.execute(status -> {
             UUID operationId = UUID.randomUUID();

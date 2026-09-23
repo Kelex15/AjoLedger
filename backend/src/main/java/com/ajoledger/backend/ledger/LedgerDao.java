@@ -27,9 +27,8 @@ public class LedgerDao {
     }
 
     /**
-     * Locks every given account row (SELECT ... FOR UPDATE) in a deterministic order
-     * (sorted by id) to avoid deadlocks when concurrent writes touch overlapping account sets.
-     * Must be called from inside the caller's existing transaction (TransactionTemplate callback).
+     * Locks every given account row in a deterministic order to avoid deadlocks when concurrent writes 
+     * touch overlapping account sets. Must be called from inside the caller's existing transaction.
      */
     public Map<UUID, AccountBalance> lockAccounts(List<UUID> accountIds) {
         List<UUID> sortedIds = accountIds.stream().distinct().sorted().toList();
@@ -69,15 +68,11 @@ public class LedgerDao {
         });
     }
 
-    /** The account's true balance, aggregated from ledger_entry directly. Independent of, and
-     * useful for verifying against, the cached Account.balance column. */
     public BigDecimal getBalance(UUID accountId) {
         String sql = "SELECT COALESCE(SUM(credit_amount - debit_amount), 0) FROM ledger_entry WHERE account_id = ?";
         return jdbcTemplate.queryForObject(sql, BigDecimal.class, accountId);
     }
 
-    /** Batched form of {@link #getBalance}. Accounts with no ledger entries are simply absent
-     * from the result rather than mapped to zero - callers should default missing lookups. */
     public Map<UUID, BigDecimal> getBalances(List<UUID> accountIds) {
         List<UUID> distinctIds = accountIds.stream().distinct().toList();
         if (distinctIds.isEmpty()) {

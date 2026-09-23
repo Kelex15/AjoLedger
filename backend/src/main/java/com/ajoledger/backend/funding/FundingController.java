@@ -3,7 +3,9 @@ package com.ajoledger.backend.funding;
 import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.funding.dto.FundDepositRequestDTO;
 import com.ajoledger.backend.funding.dto.FundWithdrawalRequestDTO;
+import com.ajoledger.backend.funding.dto.FundingDepositResponseDTO;
 import com.ajoledger.backend.funding.dto.FundingTransactionResponseDTO;
+import com.ajoledger.backend.funding.stripe.StripeCheckoutService;
 import com.ajoledger.backend.ledger.LedgerTransaction;
 
 import jakarta.validation.Valid;
@@ -19,22 +21,27 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-/** Manually funds the calling user's own account. A stand-in for real Stripe/PayPal SDK
- * integration, which isn't wired up yet. Still goes through the real ledger write path
- * (FundingService.postDeposit), just without an actual payment processor behind it. */
+/** Deposit behavior depends on funding type: a processor-backed type returns a pending redirect
+ * and the deposit lands later via webhook confirmation; anything without a processor behind it
+ * still credits the account directly and synchronously. Withdrawals are always the latter. */
 @RestController
 @RequestMapping("/api/funding")
 @RequiredArgsConstructor
 public class FundingController {
 
     private final FundingService fundingService;
+    private final StripeCheckoutService stripeCheckoutService;
 
     @PostMapping(path = "/deposit", version = "1")
-    public ResponseEntity<FundingTransactionResponseDTO> deposit(@AuthenticationPrincipal UUID currentUserId,
+    public ResponseEntity<FundingDepositResponseDTO> deposit(@AuthenticationPrincipal UUID currentUserId,
                                                             @Valid @RequestBody FundDepositRequestDTO dto) {
+        if (dto.fundingType() == FundingType.STRIPE) {
+            String checkoutUrl = stripeCheckoutService.createDepositCheckoutSession(currentUserId, dto.amount(), dto.idempotencyKey());
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(FundingDepositResponseDTO.pendingRedirect(checkoutUrl));
+        }
         LedgerTransaction transaction = fundingService.postDeposit(
                 currentUserId, UserAccountType.CHECKING, dto.fundingType(), dto.amount(), dto.idempotencyKey());
-        return ResponseEntity.status(HttpStatus.CREATED).body(FundingTransactionResponseDTO.fromTransaction(transaction));
+        return ResponseEntity.status(HttpStatus.CREATED).body(FundingDepositResponseDTO.completed(FundingTransactionResponseDTO.fromTransaction(transaction)));
     }
 
     @PostMapping(path = "/withdraw", version = "1")

@@ -26,8 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /** Round-by-round processing for already-locked circles: sweeping unpaid contributions,
- * handling non-payers (withdrawal or default), and resolving/completing rounds as they pay
- * out. Driven by CircleRoundScheduler; never reaches back into membership formation. */
+ * handling non-payers (withdrawal or default), and resolving/completing rounds as they pay out. */
 @Service
 @RequiredArgsConstructor
 public class CircleRoundService {
@@ -55,7 +54,6 @@ public class CircleRoundService {
         return amount.setScale(Currency.USD.getDecimalScale(), RoundingMode.HALF_UP);
     }
 
-    /** The scheduler is blind to how "due" is decided. It just gets ids to process. */
     public List<UUID> findCirclesWithRoundsDueToday() {
         Instant now = Instant.now();
         return circleRepository.findByStatusAndLastRoundAtIsNotNull(CircleStatus.ACTIVE).stream()

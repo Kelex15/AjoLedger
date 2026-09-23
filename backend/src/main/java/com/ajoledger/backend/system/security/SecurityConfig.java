@@ -31,12 +31,20 @@ public class SecurityConfig {
             "/api/auth/refresh"
     };
 
-    // No auth cookie is in play yet on these, so there's nothing for CSRF to protect.
+    private static final String[] PUBLIC_WEBHOOK_ENDPOINTS = {
+            "/api/funding/stripe/webhook"
+    };
+
+    private static final String[] ERROR_DISPATCH_ENDPOINTS = {
+            "/error"
+    };
+
     private static final String[] CSRF_EXEMPT_ENDPOINTS = {
             "/api/auth/signup",
             "/api/auth/login",
             "/api/auth/verify-email",
-            "/api/auth/google"
+            "/api/auth/google",
+            "/api/funding/stripe/webhook"
     };
 
     @Bean
@@ -50,10 +58,11 @@ public class SecurityConfig {
                         .ignoringRequestMatchers(CSRF_EXEMPT_ENDPOINTS)
                         .sessionAuthenticationStrategy(new NullAuthenticatedSessionStrategy()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // Default entry point without form-login/httpBasic configured is 403, not 401.
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_AUTH_ENDPOINTS).permitAll()
+                        .requestMatchers(PUBLIC_WEBHOOK_ENDPOINTS).permitAll()
+                        .requestMatchers(ERROR_DISPATCH_ENDPOINTS).permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService, userRepository, authCookieService), UsernamePasswordAuthenticationFilter.class)

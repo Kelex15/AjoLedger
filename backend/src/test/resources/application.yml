@@ -14,3 +14,6 @@ ajoledger:
     client-id: test-client-id
   frontend:
     base-url: http://localhost:3000
+  stripe:
+    api-key: sk_test_dummy
+    webhook-secret: whsec_test_dummy

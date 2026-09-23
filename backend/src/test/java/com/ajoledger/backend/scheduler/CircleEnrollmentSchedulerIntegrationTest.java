@@ -111,7 +111,7 @@ class CircleEnrollmentSchedulerIntegrationTest {
         Circle circle = createPastDeadlineOpenEnrollmentCircle();
         UUID nonExistentCircleId = UUID.randomUUID();
 
-        // nonExistentCircleId fails immediately (Circle not found) - it comes first in the list
+        // nonExistentCircleId fails immediately (Circle not found), it comes first in the list
         // specifically to prove that failure doesn't stop the real circle after it from being tried
         scheduler.processCircles(List.of(nonExistentCircleId, circle.getId()));
 

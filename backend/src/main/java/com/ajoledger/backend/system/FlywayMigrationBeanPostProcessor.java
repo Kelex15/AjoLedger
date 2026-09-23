@@ -6,10 +6,9 @@ import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
 
-/** Spring Boot 4.1 ships no Flyway autoconfiguration (see LEARNING.md), so this hooks the
- * DataSource bean directly. Reading spring.datasource.* from the environment instead misses
- * Testcontainers' @ServiceConnection-provided DataSource, since that's registered as a bean,
- * not an environment property. */
+/** Spring Boot 4.1 doesn't autoconfigure Flyway, so this hooks the DataSource bean directly
+ * instead. Reading spring.datasource.* from the environment wouldn't work here, since
+ * Testcontainers registers its @ServiceConnection DataSource as a bean, not a property. */
 @Component
 public class FlywayMigrationBeanPostProcessor implements BeanPostProcessor {
 

@@ -2,7 +2,7 @@ package com.ajoledger.backend.circle;
 
 import java.math.BigDecimal;
 
-/** Pure trust/risk model math (design/v3.md), kept free of entities and repositories so each
+/** Pure trust/risk model math, kept free of entities and repositories so each
  * formula is directly unit-testable. */
 public final class TrustCalculations {
 

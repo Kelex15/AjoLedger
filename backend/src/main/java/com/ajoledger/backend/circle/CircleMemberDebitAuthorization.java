@@ -21,10 +21,10 @@ import java.time.Instant;
 import java.util.UUID;
 
 /** Max amount still seizable from this member's own accounts, tracked separately from the live
- * group-loss formulas so a future formula bug can under-seize but never over-seize.
+ * group-loss formulas so any drift between the two can only under-seize, never over-seize.
  *
  * No @Version: a member holds only one ACTIVE membership at a time, so nothing writes this
- * concurrently today - add one first if that ever changes. */
+ * concurrently today. Add one first if that ever changes. */
 @Entity
 @Table(name = "circle_member_debit_authorization")
 @Getter

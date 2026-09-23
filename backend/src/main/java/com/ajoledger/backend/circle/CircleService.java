@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CircleService {
 
-    // Reputation score weighting: placeholders, not tuned.
+    // Reputation score weighting.
     private static final double REPUTATION_LIEN_WEIGHT = 0.5;
     private static final long DEFAULT_PENALTY_MULTIPLIER = 3;
     private static final long REPUTATION_SMOOTHING_PRIOR = 1; // Laplace smoothing prior.
@@ -201,9 +201,7 @@ public class CircleService {
                 .build());
 
         CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
-        // Keyed by this membership row's own id, not circleId:userId - a user can now rejoin a
-        // circle they've previously left/been removed from, and a static key would collide with
-        // the earlier cycle's already-succeeded idempotency record, silently skipping the debit.
+        // Keyed by this membership row's id, since each rejoin cycle needs its own idempotency record.
         circleTransactionsService.postContribution(userId, circleId, pot.getId(), circle.getContributionAmount(),
                 IdempotencyKeys.of(membership.getId(), "join"));
         BigDecimal collateral = calculateJoinCollateral(circle);
@@ -285,8 +283,6 @@ public class CircleService {
         return computeReputationScore(circle, successes, withdrawals, defaults, lienBalance);
     }
 
-    /** Batched form of {@link #computeReputationScore(Circle, User)}: 4 queries total instead of
-     * 5 per member, so ranking a whole circle doesn't grow linearly with its member count. */
     private Map<UUID, Double> computeReputationScores(Circle circle, List<CircleMembership> members) {
         List<UUID> userIds = members.stream().map(m -> m.getUser().getId()).toList();
 
@@ -401,7 +397,7 @@ public class CircleService {
         return circleMembershipRepository.findByCircle_IdAndStatus(circleId, MembershipStatus.ACTIVE);
     }
 
-    /** Creator-initiated removal of a not-yet-locked member, e.g. after seeing a low reputation score. */
+    /** Creator-initiated removal of a not-yet-locked member. */
     @Transactional
     public void removeMember(UUID circleId, UUID requestingUserId, UUID memberUserId) {
         Circle circle = circleRepository.findById(circleId)
@@ -420,15 +416,14 @@ public class CircleService {
                 .orElseThrow(() -> new CircleActionNotAllowedException("User is not an active member of this circle: " + memberUserId));
 
         CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
-        // Keyed by this membership row's own id - see the matching comment in joinCircle for why
-        // a static circleId:userId key isn't safe once a member can go through this cycle more than once.
+        // Keyed by this membership row's id, since each rejoin cycle needs its own idempotency record.
         circleTransactionsService.postContributionRefund(memberUserId, circleId, pot.getId(), circle.getContributionAmount(),
                 IdempotencyKeys.of(membership.getId(), "remove-refund"));
         circleMembershipRepository.delete(membership);
     }
 
     /** Creator-initiated and permanent, unlike removeMember: blocks the member from ever
-     * rejoining this circle (enforced in CircleSizingPolicy.canAdmitMember). */
+     * rejoining this circle. */
     @Transactional
     public void banMember(UUID circleId, UUID requestingUserId, UUID memberUserId) {
         Circle circle = circleRepository.findById(circleId)

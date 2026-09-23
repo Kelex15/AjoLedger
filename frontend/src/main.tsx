@@ -10,7 +10,7 @@ import { ThemeProvider } from './theme/ThemeProvider'
 import './index.css'
 
 // A 401 that reaches here means apiFetch already tried a silent refresh-and-retry and it still
-// failed - the refresh token itself is gone, not just the short-lived access token. Flipping
+// failed, the refresh token itself is gone, not just the short-lived access token. Flipping
 // currentUser to null (rather than each query/mutation handling this individually) is what makes
 // ProtectedRoute redirect to /login, no matter which request on which page surfaced it.
 function handleSessionExpired(error: unknown) {

@@ -13,7 +13,6 @@ import com.ajoledger.backend.user.User;
 
 public abstract class CircleSizingPolicy {
 
-    // Placeholders, not tuned yet.
     private static final BigDecimal GATED_LOSS_DISCOUNT = new BigDecimal("0.5");
     private static final double JOIN_COLLATERAL_RATE = 0.10;
 
@@ -64,7 +63,7 @@ public abstract class CircleSizingPolicy {
         return TrustCalculations.applyGatedDiscount(loss, circle.isGated(), GATED_LOSS_DISCOUNT);
     }
 
-    /** Never gated-discounted - a real default owes the full contribution regardless of gating.
+    /** Never gated-discounted: a real default owes the full contribution regardless of gating.
      * totalRounds is passed explicitly rather than read off circle, since a co-occurring
      * withdrawal in the same pass can shrink circle.getLockedMemberCount() before this runs. */
     public BigDecimal calculateRealizedGroupLoss(Circle circle, int totalRounds, int payoutPosition) {

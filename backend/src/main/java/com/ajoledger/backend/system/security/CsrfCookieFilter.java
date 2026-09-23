@@ -11,11 +11,12 @@ import java.io.IOException;
 
 import org.springframework.security.web.csrf.CsrfToken;
 
-/** Deferred CSRF token loading only renders the token into its cookie once something reads
- * it - without this, the cookie never gets set on the response that's supposed to carry it.
- * Not a @Component: Spring Boot auto-registers any Filter bean as a generic servlet filter
- * on top of wherever HttpSecurity adds it, which runs this twice per request and, since it
- * mutates the deferred CSRF token, alternately wipes the cookie it's supposed to maintain. */
+/** The CSRF token Spring Security attaches to the request is lazy: nothing writes it to the
+ * response cookie until something actually calls getToken() on it. This filter exists just to
+ * force that read.
+ * Deliberately not a @Component: Spring Boot would then also register it as a plain servlet
+ * filter on top of the one HttpSecurity already wires in, so it runs twice per request. Reading
+ * the same deferred token twice toggles it, wiping the cookie every other request. */
 public class CsrfCookieFilter extends OncePerRequestFilter {
 
     @Override

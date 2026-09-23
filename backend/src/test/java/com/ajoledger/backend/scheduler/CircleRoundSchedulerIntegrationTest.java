@@ -96,7 +96,7 @@ class CircleRoundSchedulerIntegrationTest {
         Circle circle = circleService.createCircle(creator.getId(), dto);
         circleService.joinCircle(member2.getId(), circle.getId());
 
-        // Drain whoever round 1 paid out - their own payout would otherwise cover round 2's
+        // Drain whoever round 1 paid out, their own payout would otherwise cover round 2's
         // contribution on its own, so neither member would actually be short.
         for (User member : List.of(creator, member2)) {
             BigDecimal balance = accountService.getUserAccount(member.getId(), UserAccountType.SAVINGS).orElseThrow().getBalance();
@@ -174,7 +174,7 @@ class CircleRoundSchedulerIntegrationTest {
         assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(circle.getId(), recipientId, MembershipStatus.DEFAULTED))
                 .isPresent();
         // Gating discounts the *forward-looking* risk estimate used for admission/collateral sizing,
-        // not the real debt once a default has actually happened - the group is still short the full
+        // not the real debt once a default has actually happened, the group is still short the full
         // $100 contribution regardless of how the circle was formed.
         assertThat(lienBeforeDefault.subtract(lienAfterDefault)).isEqualByComparingTo("100.00");
     }
@@ -284,7 +284,7 @@ class CircleRoundSchedulerIntegrationTest {
         reloaded.setLastRoundAt(Instant.now().minus(Duration.ofDays((reloaded.getTerm() + 1L) * 7)));
         circleRepository.save(reloaded);
 
-        scheduler.runDueRoundChecks(); // everyone still has enough savings to pay round 2 - no default
+        scheduler.runDueRoundChecks(); // everyone still has enough savings to pay round 2, no default
 
         BigDecimal ceilingAfterRound2 = circleMemberDebitAuthorizationRepository
                 .findByCircleMembership_Id(someMembership.getId()).orElseThrow().getRemainingCeiling();
@@ -322,7 +322,7 @@ class CircleRoundSchedulerIntegrationTest {
 
         circleTransactionsService.postLienHold(recipientId, new BigDecimal("100.00"), UUID.randomUUID().toString());
 
-        // Simulate the ceiling having less headroom than the $100 group loss - e.g. a member who
+        // Simulate the ceiling having less headroom than the $100 group loss, e.g. a member who
         // already partly serviced their exposure through some other path this test doesn't model.
         CircleMemberDebitAuthorization authorization = circleMemberDebitAuthorizationRepository
                 .findByCircleMembership_Id(recipientMembership.getId()).orElseThrow();
@@ -532,7 +532,7 @@ class CircleRoundSchedulerIntegrationTest {
         Circle circle = createOverdueActiveCircle();
         UUID nonExistentCircleId = UUID.randomUUID();
 
-        // nonExistentCircleId fails immediately (Circle not found) - it comes first in the list
+        // nonExistentCircleId fails immediately (Circle not found), it comes first in the list
         // specifically to prove that failure doesn't stop the real circle after it from being tried
         scheduler.processCircles(List.of(nonExistentCircleId, circle.getId()));
 

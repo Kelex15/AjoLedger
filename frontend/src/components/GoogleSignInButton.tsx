@@ -42,7 +42,7 @@ function loadGoogleScript(): Promise<void> {
 
 export function GoogleSignInButton({ onCredential }: { onCredential: (idToken: string) => void }) {
   const buttonRef = useRef<HTMLDivElement>(null)
-  // Kept fresh across renders so the effect below can stay mount-only - re-running
+  // Kept fresh across renders so the effect below can stay mount-only, re-running
   // initialize/renderButton on every render would otherwise re-mount the widget.
   const onCredentialRef = useRef(onCredential)
   useEffect(() => {

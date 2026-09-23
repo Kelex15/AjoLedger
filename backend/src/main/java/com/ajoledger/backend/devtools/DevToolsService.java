@@ -15,7 +15,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /** Lets a circle skip ahead to its next time-gated transition without waiting for the real
- * scheduler cron. Only registered under the "dev" profile - never wired up in prod. */
+ * scheduler cron. Only registered under the "dev" profile, never wired up in prod. */
 @Profile("dev")
 @Service
 @RequiredArgsConstructor

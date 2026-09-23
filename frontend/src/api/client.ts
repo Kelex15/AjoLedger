@@ -50,7 +50,7 @@ let refreshPromise: Promise<boolean> | null = null
 
 function refreshAccessToken(): Promise<boolean> {
   if (!refreshPromise) {
-    // Goes through rawFetch, not a bare fetch - /api/auth/refresh isn't CSRF-exempt on the
+    // Goes through rawFetch, not a bare fetch, /api/auth/refresh isn't CSRF-exempt on the
     // backend, so it needs the same X-XSRF-TOKEN header every other mutating request gets.
     refreshPromise = rawFetch('/api/auth/refresh', { method: 'POST' })
       .then((response) => response.ok)

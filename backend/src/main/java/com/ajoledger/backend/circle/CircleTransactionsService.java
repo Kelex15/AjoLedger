@@ -28,7 +28,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /** All ledger-posting for circle money movement: contributions, payouts, liens, and the
- * default waterfall. Doesn't know about membership state - callers pass in whatever
+ * default waterfall. Doesn't know about membership state. Callers pass in whatever
  * account ids and amounts the posting needs. */
 @Service
 @RequiredArgsConstructor
@@ -251,7 +251,7 @@ public class CircleTransactionsService {
         });
     }
 
-    /** Nothing further to recover here - an unrecovered shortfall just means the circle's own
+    /** Nothing further to recover here. An unrecovered shortfall just means the circle's own
      * future rounds pay out proportionally less (design/v3.md §5), not a new transfer to post. */
     private void flagUnrecoveredShortfall(UUID circleMembershipId, BigDecimal unrecoveredShortfall) {
         if (unrecoveredShortfall.signum() > 0) {
@@ -275,7 +275,7 @@ public class CircleTransactionsService {
     }
 
     /** Leftover reserve/pot money at completion belongs to members who withdrew before their
-     * own payout, not anyone already paid - split weighted by rounds contributed, net of a buffer fee. */
+     * own payout, not anyone already paid. It's split weighted by rounds contributed, net of a buffer fee. */
     public List<LedgerTransaction> postCircleCompletionRefunds(UUID circleId, UUID reserveAccountId, UUID potAccountId,
                                                                  Currency currency, List<WithdrawnMemberShare> withdrawnShares,
                                                                  String idempotencyKey) {

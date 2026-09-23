@@ -94,7 +94,7 @@ class LedgerIntegrationTest {
         UserAccount payerSavings = createFundedAccount(payer, UserAccountType.SAVINGS, new BigDecimal("100.00"));
         UserAccount recipientSavings = accountService.createUserAccount(recipient, UserAccountType.SAVINGS);
 
-        // Two concurrent transfers of the full balance - only one should succeed.
+        // Two concurrent transfers of the full balance, only one should succeed.
         Callable<LedgerTransaction> attempt = () -> ledgerService.postTransfer(
                 payer.getId(), UserAccountType.SAVINGS, recipient.getId(), UserAccountType.SAVINGS,
                 new BigDecimal("100.00"), UUID.randomUUID().toString());
@@ -262,7 +262,7 @@ class LedgerIntegrationTest {
             jdbcTemplate.update(
                     "INSERT INTO transaction (id, amount, currency, description, transaction_type, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                     transactionId, new BigDecimal("100.00"), "USD", "unbalanced test", "TRANSFER", Timestamp.from(Instant.now()));
-            // debit 100, credit only 50 - does not net to zero
+            // debit 100, credit only 50: does not net to zero
             jdbcTemplate.update(
                     "INSERT INTO ledger_entry (id, account_id, debit_amount, credit_amount, transaction_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                     UUID.randomUUID(), account.getId(), new BigDecimal("100.00"), BigDecimal.ZERO, transactionId, Timestamp.from(Instant.now()));

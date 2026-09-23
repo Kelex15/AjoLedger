@@ -1,11 +1,15 @@
 package com.ajoledger.backend.system;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -23,6 +27,8 @@ import com.ajoledger.backend.circle.exception.CircleNotFoundException;
 import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
 import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
 import com.ajoledger.backend.circle.exception.InviteNotFoundException;
+import com.ajoledger.backend.funding.stripe.exception.StripeCheckoutFailedException;
+import com.stripe.exception.SignatureVerificationException;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.ledger.exception.IdempotencyKeyConflictException;
 import com.ajoledger.backend.ledger.exception.InvalidTransferTargetException;
@@ -30,7 +36,7 @@ import com.ajoledger.backend.ledger.exception.LienWithdrawalBlockedException;
 import com.ajoledger.backend.user.exception.UserNotFoundException;
 
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<MessageResponseDTO> handleInvalidCredentials(InvalidCredentialsException e) {
@@ -117,16 +123,37 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new MessageResponseDTO(e.getMessage()));
     }
 
+    @ExceptionHandler(SignatureVerificationException.class)
+    public ResponseEntity<MessageResponseDTO> handleStripeSignatureVerificationFailed(SignatureVerificationException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new MessageResponseDTO("Invalid webhook signature"));
+    }
+
+    @ExceptionHandler(StripeCheckoutFailedException.class)
+    public ResponseEntity<MessageResponseDTO> handleStripeCheckoutFailed(StripeCheckoutFailedException e) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(new MessageResponseDTO(e.getMessage()));
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<MessageResponseDTO> handleDataIntegrityViolation(DataIntegrityViolationException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO("A conflicting record already exists"));
     }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<MessageResponseDTO> handleValidation(MethodArgumentNotValidException e) {
-        String message = e.getBindingResult().getFieldErrors().stream()
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex, HttpHeaders headers,
+                                                                    HttpStatusCode status, WebRequest request) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
                 .map(error -> Objects.requireNonNullElse(error.getDefaultMessage(), "Invalid value"))
                 .collect(Collectors.joining("; "));
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new MessageResponseDTO(message));
+        return handleExceptionInternal(ex, new MessageResponseDTO(message), headers, status, request);
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body, HttpHeaders headers,
+                                                               HttpStatusCode statusCode, WebRequest request) {
+        if (body instanceof MessageResponseDTO) {
+            return ResponseEntity.status(statusCode).headers(headers).body(body);
+        }
+        String message = Objects.requireNonNullElse(ex.getMessage(), statusCode.toString());
+        return ResponseEntity.status(statusCode).headers(headers).body(new MessageResponseDTO(message));
     }
 }

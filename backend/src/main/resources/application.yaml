@@ -38,3 +38,8 @@ ajoledger:
   scheduler:
     deadline-check-cron: ${DEADLINE_CHECK_CRON:0 0 0 * * *} # daily at 12am server time
     enrollment-close-cron: ${ENROLLMENT_CLOSE_CRON:0 0 0 * * *} # daily at 12am server time
+    reconciliation-cron: ${RECONCILIATION_CRON:0 0 * * * *} # hourly
+    reconciliation-lookback-hours: ${RECONCILIATION_LOOKBACK_HOURS:24}
+  stripe:
+    api-key: ${STRIPE_API_KEY} # no default on purpose, same reasoning as JWT_SECRET. Set this in your local .env.
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET}

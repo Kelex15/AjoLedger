@@ -5,7 +5,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.util.List;
 
 @ConfigurationProperties(prefix = "ajoledger")
-public record AppProperties(Jwt jwt, Cors cors, Security security, Google google, Frontend frontend, Scheduler scheduler) {
+public record AppProperties(Jwt jwt, Cors cors, Security security, Google google, Frontend frontend, Scheduler scheduler,
+                             Stripe stripe) {
 
     public record Jwt(String secret, long accessTokenExpiration, long refreshTokenExpiration) {
     }
@@ -22,6 +23,10 @@ public record AppProperties(Jwt jwt, Cors cors, Security security, Google google
     public record Frontend(String baseUrl) {
     }
 
-    public record Scheduler(String deadlineCheckCron, String enrollmentCloseCron) {
+    public record Scheduler(String deadlineCheckCron, String enrollmentCloseCron, String reconciliationCron,
+                             int reconciliationLookbackHours) {
+    }
+
+    public record Stripe(String apiKey, String webhookSecret) {
     }
 }

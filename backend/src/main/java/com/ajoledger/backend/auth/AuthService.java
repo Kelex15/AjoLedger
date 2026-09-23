@@ -102,17 +102,17 @@ public class AuthService {
     }
 
     /** A signup that never got verified doesn't get to permanently squat on an email.
-     * It's deleted so the real owner can retry. A verified account is a real conflict
-     * and is left alone. */
+     * It's deleted so the real owner can retry. But a verified account is a real
+     * conflict, so it stays. */
     private void reclaimStaleUnverifiedAccount(String email) {
         userRepository.findByEmail(email).ifPresent(existingUser -> {
             UserAuth existingAuth = userAuthRepository.findByUserId(existingUser.getId()).orElse(null);
             if (existingAuth != null && existingAuth.isEmailVerified()) {
                 throw new DataIntegrityViolationException("Username or email already registered");
             }
-            // explicit flush: Hibernate's default flush order runs all inserts before all deletes
-            // within one transaction, so without this the new user's insert (below) would hit
-            // the unique email constraint before this delete ever reaches the database
+            // explicit flush: Hibernate runs all inserts before all deletes within one transaction
+            // by default. Without this, the new user's insert below would hit the unique email
+            // constraint before this delete ever reaches the database.
             if (existingAuth != null) {
                 userAuthRepository.delete(existingAuth);
                 userAuthRepository.flush();

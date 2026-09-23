@@ -84,7 +84,7 @@ class AuthFlowIntegrationTest {
     }
 
     /** POST endpoints outside the pre-auth flow (login/signup/etc.) require a matching
-     * XSRF-TOKEN cookie and X-XSRF-TOKEN header - grab one from any GET response. */
+     * XSRF-TOKEN cookie and X-XSRF-TOKEN header. Grab one from any GET response. */
     private String csrfToken() {
         ExchangeResult result = restTestClient.get().uri("/api/ledger/lien").exchange().returnResult();
         return cookieValue(result, "XSRF-TOKEN");
@@ -179,7 +179,7 @@ class AuthFlowIntegrationTest {
                 .exchange()
                 .expectStatus().isUnauthorized();
 
-        // the token that was still valid a moment ago must now also be dead - whole family revoked
+        // the token that was still valid a moment ago must now also be dead, whole family revoked
         restTestClient.post().uri("/api/auth/refresh")
                 .cookie("refresh_token", activeToken)
                 .cookie("XSRF-TOKEN", csrf)
