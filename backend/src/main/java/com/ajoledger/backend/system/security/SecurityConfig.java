@@ -39,6 +39,10 @@ public class SecurityConfig {
             "/error"
     };
 
+    private static final String[] PUBLIC_HEALTH_ENDPOINTS = {
+            "/actuator/health"
+    };
+
     private static final String[] CSRF_EXEMPT_ENDPOINTS = {
             "/api/auth/signup",
             "/api/auth/login",
@@ -63,6 +67,7 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_AUTH_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_WEBHOOK_ENDPOINTS).permitAll()
                         .requestMatchers(ERROR_DISPATCH_ENDPOINTS).permitAll()
+                        .requestMatchers(PUBLIC_HEALTH_ENDPOINTS).permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService, userRepository, authCookieService), UsernamePasswordAuthenticationFilter.class)

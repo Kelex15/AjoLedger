@@ -2,3 +2,7 @@
 .guide
 .DS_Store
 ajoledger.code-workspace
+terraform/.terraform
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/terraform.tfvars

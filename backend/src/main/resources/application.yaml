@@ -18,6 +18,15 @@ spring:
 server:
   port: ${SERVER_PORT:8081}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 ajoledger:
   jwt:
     secret: ${JWT_SECRET} # no default on purpose - a committed fallback secret is a real vulnerability, not a convenience. Set this in your local .env.

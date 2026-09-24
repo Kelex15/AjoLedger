@@ -1,0 +1,24 @@
+#cloud-config
+write_files:
+  - path: /opt/ajoledger/config.env
+    permissions: '0600'
+    content: |
+      AWS_REGION=${aws_region}
+      ECR_REPO_URL=${ecr_repo_url}
+      DB_ADDRESS=${db_address}
+      DOMAIN=${domain}
+      CORS_ORIGIN=${cors_origin}
+      JWT_SECRET_ARN=${jwt_secret_arn}
+      STRIPE_API_KEY_ARN=${stripe_api_key_arn}
+      STRIPE_WEBHOOK_SECRET_ARN=${stripe_webhook_secret_arn}
+      DB_SECRET_ARN=${db_secret_arn}
+  - path: /opt/ajoledger/deploy.sh
+    permissions: '0755'
+    content: |
+${indent(6, deploy_script)}
+
+runcmd:
+  - dnf install -y docker jq unzip
+  - systemctl enable --now docker
+  - command -v aws || (curl -s "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o /tmp/awscliv2.zip && unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install)
+  - /opt/ajoledger/deploy.sh

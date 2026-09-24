@@ -7,6 +7,10 @@ on:
       - 'backend/**'
       - '.github/workflows/backend-cd.yml'
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -20,7 +24,28 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Build and deploy
+      - name: Build jar
+        run: ./mvnw -B clean package -DskipTests
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Log in to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          REPOSITORY: ajoledger-backend
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "TODO: no deploy target wired up yet (App Runner - see ADR 0002/0003)"
-          # ./mvnw -B clean package spring-boot:repackage && ./mvnw -B deploy
+          docker build -t "$REGISTRY/$REPOSITORY:$IMAGE_TAG" -t "$REGISTRY/$REPOSITORY:latest" .
+          docker push "$REGISTRY/$REPOSITORY:$IMAGE_TAG"
+          docker push "$REGISTRY/$REPOSITORY:latest"
+      - name: Redeploy on the backend host
+        run: |
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands='["sudo /opt/ajoledger/deploy.sh"]'
