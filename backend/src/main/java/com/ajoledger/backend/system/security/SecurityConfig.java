@@ -17,6 +17,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 
 import com.ajoledger.backend.auth.JwtService;
+import com.ajoledger.backend.system.AppProperties;
 import com.ajoledger.backend.user.UserRepository;
 
 @Configuration
@@ -53,11 +54,11 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtService jwtService, UserRepository userRepository,
-                                                     AuthCookieService authCookieService) throws Exception {
+                                                     AuthCookieService authCookieService, AppProperties appProperties) throws Exception {
         return http
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf
-                        .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                        .csrfTokenRepository(csrfTokenRepository(appProperties))
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                         .ignoringRequestMatchers(CSRF_EXEMPT_ENDPOINTS)
                         .sessionAuthenticationStrategy(new NullAuthenticatedSessionStrategy()))
@@ -78,5 +79,16 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
+    }
+
+    /** Unlike the httpOnly auth cookies, this one also needs to be readable by frontend JS
+     * running on a different subdomain, so it needs a broader Domain than the default. */
+    private CookieCsrfTokenRepository csrfTokenRepository(AppProperties appProperties) {
+        CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        String cookieDomain = appProperties.security().cookieDomain();
+        if (cookieDomain != null && !cookieDomain.isBlank()) {
+            repository.setCookieCustomizer(builder -> builder.domain(cookieDomain));
+        }
+        return repository;
     }
 }

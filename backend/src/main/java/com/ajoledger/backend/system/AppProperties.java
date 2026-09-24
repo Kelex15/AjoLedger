@@ -14,7 +14,7 @@ public record AppProperties(Jwt jwt, Cors cors, Security security, Google google
     public record Cors(List<String> allowedOrigins, List<String> allowedMethods, List<String> allowedHeaders) {
     }
 
-    public record Security(int maxFailedAttempts, int lockoutDurationMinutes, boolean secureCookies) {
+    public record Security(int maxFailedAttempts, int lockoutDurationMinutes, boolean secureCookies, String cookieDomain) {
     }
 
     public record Google(String clientId) {

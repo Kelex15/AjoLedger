@@ -99,6 +99,7 @@ resource "aws_instance" "backend" {
     stripe_webhook_secret_arn = aws_secretsmanager_secret.stripe_webhook_secret.arn
     db_secret_arn             = aws_db_instance.main.master_user_secret[0].secret_arn
     google_oauth_client_id    = var.google_oauth_client_id
+    cookie_domain             = var.domain_name
   })
 
   # Without this, EC2 has no API to update user_data on a running instance, so

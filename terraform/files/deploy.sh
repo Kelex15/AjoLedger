@@ -39,6 +39,7 @@ docker run -d \
   -e FRONTEND_BASE_URL="$CORS_ORIGIN" \
   -e SECURE_COOKIES=true \
   -e GOOGLE_OAUTH_CLIENT_ID="$GOOGLE_OAUTH_CLIENT_ID" \
+  -e COOKIE_DOMAIN="$COOKIE_DOMAIN" \
   "$ECR_REPO_URL:latest"
 
 mkdir -p /opt/ajoledger/caddy
