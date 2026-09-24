@@ -21,7 +21,9 @@ resource "aws_iam_role" "github_actions_deploy" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         StringLike = {
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repo}:ref:refs/heads/main"
+          # GitHub's sub claim embeds immutable owner/repo ids (repo:owner@id/name@id:ref:...),
+          # not the plain "owner/repo" form - wildcard those two segments.
+          "token.actions.githubusercontent.com:sub" = "repo:${split("/", var.github_repo)[0]}@*/${split("/", var.github_repo)[1]}@*:ref:refs/heads/main"
         }
       }
     }]
