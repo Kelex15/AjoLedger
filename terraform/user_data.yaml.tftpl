@@ -15,7 +15,7 @@ write_files:
   - path: /opt/ajoledger/deploy.sh
     permissions: '0755'
     content: |
-${indent(6, deploy_script)}
+      ${indent(6, deploy_script)}
 
 runcmd:
   - dnf install -y docker jq unzip

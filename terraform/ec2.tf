@@ -100,6 +100,10 @@ resource "aws_instance" "backend" {
     db_secret_arn             = aws_db_instance.main.master_user_secret[0].secret_arn
   })
 
+  # Without this, EC2 has no API to update user_data on a running instance, so
+  # Terraform would just update its own state and silently leave the real box unchanged.
+  user_data_replace_on_change = true
+
   tags = {
     Name = "${var.project_name}-backend"
   }
