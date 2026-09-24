@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router'
 import type { UserAccountType } from '../api/accounts'
 import { fetchLienStatus, fetchMyAccounts } from '../api/accounts'
 import { ApiError } from '../api/client'
-import { deposit, withdraw, type FundingType } from '../api/funding'
+import { deposit, verifyStripeCheckoutSession, withdraw, type FundingType } from '../api/funding'
 import { queryKeys } from '../api/queryKeys'
 import { lienHold, lienWithdraw, transfer } from '../api/transactions'
 import { useAuth } from '../auth/useAuth'
@@ -30,8 +30,8 @@ export function DashboardPage() {
   const [amount, setAmount] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  // Landed back here from Stripe's hosted checkout. The deposit itself is confirmed by the
-  // webhook, not this redirect, so this banner is just UI feedback, not the source of truth.
+  // Landed back here from Stripe's hosted checkout. If the webhook already posted the deposit
+  // this is a no-op; if it hasn't (or never will), this is what actually posts it.
   const [searchParams, setSearchParams] = useSearchParams()
   const [depositBanner, setDepositBanner] = useState<'success' | 'cancelled' | null>(null)
   useEffect(() => {
@@ -40,11 +40,17 @@ export function DashboardPage() {
       return
     }
     setDepositBanner(depositStatus)
-    if (depositStatus === 'success') {
+    const sessionId = searchParams.get('session_id')
+    if (depositStatus === 'success' && sessionId) {
+      verifyStripeCheckoutSession(sessionId)
+        .catch(() => null)
+        .finally(() => queryClient.invalidateQueries({ queryKey: queryKeys.accounts }))
+    } else if (depositStatus === 'success') {
       queryClient.invalidateQueries({ queryKey: queryKeys.accounts })
     }
     setSearchParams((params) => {
       params.delete('depositStatus')
+      params.delete('session_id')
       return params
     }, { replace: true })
   }, [searchParams, queryClient, setSearchParams])

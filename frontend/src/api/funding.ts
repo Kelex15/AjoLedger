@@ -41,3 +41,12 @@ export function withdraw(fields: WithdrawalFields) {
     body: JSON.stringify({ ...fields, idempotencyKey: crypto.randomUUID() }),
   })
 }
+
+// Returns the transaction if the deposit was posted (either now, or already earlier by the
+// webhook), or undefined if Stripe hasn't confirmed the payment yet.
+export function verifyStripeCheckoutSession(sessionId: string) {
+  return apiFetch<FundingTransaction | undefined>(
+    `/api/funding/stripe/checkout-sessions/${encodeURIComponent(sessionId)}/verify`,
+    { method: 'POST' },
+  )
+}

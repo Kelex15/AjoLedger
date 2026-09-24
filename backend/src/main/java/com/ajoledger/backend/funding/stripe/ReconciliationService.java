@@ -8,7 +8,6 @@ import com.stripe.exception.StripeException;
 import com.stripe.model.checkout.Session;
 import com.stripe.param.checkout.SessionListParams;
 
-import com.ajoledger.backend.account.Currency;
 import com.ajoledger.backend.ledger.LedgerTransaction;
 import com.ajoledger.backend.ledger.LedgerTransactionDao;
 import com.ajoledger.backend.ledger.idempotency.IdempotencyDao;
@@ -78,7 +77,7 @@ public class ReconciliationService {
             return;
         }
 
-        BigDecimal expected = toAmount(session.getAmountTotal(), session.getCurrency());
+        BigDecimal expected = StripeAmounts.toDecimal(session.getAmountTotal(), session.getCurrency());
         Optional<IdempotencyRecord> record = idempotencyDao.findByKey(idempotencyKey);
         if (record.isEmpty() || record.get().status() != IdempotencyStatus.SUCCEEDED || record.get().transactionId() == null) {
             reconciliationMismatchDao.insert(PROCESSOR, session.getId(), ReconciliationMismatchType.MISSING_LEDGER_ENTRY, expected, null);
@@ -104,7 +103,7 @@ public class ReconciliationService {
     private void checkProcessedEventStillValidInStripe(ProcessedWebhookEvent event) {
         JsonNode sessionNode = objectMapper.readTree(event.rawPayload()).path("data").path("object");
         String sessionId = sessionNode.path("id").asString();
-        BigDecimal recordedAmount = toAmount(sessionNode.path("amount_total").asLong(), sessionNode.path("currency").asString());
+        BigDecimal recordedAmount = StripeAmounts.toDecimal(sessionNode.path("amount_total").asLong(), sessionNode.path("currency").asString());
 
         Session session;
         try {
@@ -117,14 +116,9 @@ public class ReconciliationService {
             return;
         }
 
-        BigDecimal currentAmount = toAmount(session.getAmountTotal(), session.getCurrency());
+        BigDecimal currentAmount = StripeAmounts.toDecimal(session.getAmountTotal(), session.getCurrency());
         if (!"paid".equals(session.getPaymentStatus()) || currentAmount.compareTo(recordedAmount) != 0) {
             reconciliationMismatchDao.insert(PROCESSOR, event.eventId(), ReconciliationMismatchType.AMOUNT_MISMATCH, recordedAmount, currentAmount);
         }
-    }
-
-    private static BigDecimal toAmount(long amountTotal, String currencyCode) {
-        Currency currency = Currency.valueOf(currencyCode.toUpperCase());
-        return BigDecimal.valueOf(amountTotal).movePointLeft(currency.getDecimalScale());
     }
 }

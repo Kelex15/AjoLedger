@@ -7,10 +7,6 @@ import com.stripe.model.Event;
 import com.stripe.net.Webhook;
 
 import com.ajoledger.backend.account.Currency;
-import com.ajoledger.backend.account.UserAccountType;
-import com.ajoledger.backend.funding.FundingService;
-import com.ajoledger.backend.funding.FundingType;
-import com.ajoledger.backend.ledger.LedgerTransaction;
 import com.ajoledger.backend.system.AppProperties;
 
 import lombok.RequiredArgsConstructor;
@@ -19,7 +15,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -36,7 +31,7 @@ public class StripeWebhookService {
 
     private final AppProperties appProperties;
     private final ProcessedWebhookEventDao processedWebhookEventDao;
-    private final FundingService fundingService;
+    private final StripeCheckoutProcessor checkoutProcessor;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
@@ -66,22 +61,18 @@ public class StripeWebhookService {
 
     private void processCheckoutSessionCompleted(UUID rowId, String rawPayload) {
         JsonNode sessionNode = readSessionNode(rawPayload);
-        String paymentStatus = sessionNode.path("payment_status").asString(null);
-        if (!"paid".equals(paymentStatus)) {
-            log.info("Stripe checkout session {} has payment_status {}, not processing yet",
-                    sessionNode.path("id").asString(null), paymentStatus);
-            return;
-        }
-
-        UUID userId = UUID.fromString(sessionNode.path("metadata").path("userId").asString());
-        String idempotencyKey = sessionNode.path("metadata").path("idempotencyKey").asString();
-        Currency currency = Currency.valueOf(sessionNode.path("currency").asString().toUpperCase());
-        BigDecimal amount = BigDecimal.valueOf(sessionNode.path("amount_total").asLong())
-                .movePointLeft(currency.getDecimalScale());
+        String currencyCode = sessionNode.path("currency").asString();
+        PaidCheckoutSession session = new PaidCheckoutSession(
+                sessionNode.path("id").asString(null),
+                sessionNode.path("payment_status").asString(null),
+                UUID.fromString(sessionNode.path("metadata").path("userId").asString()),
+                sessionNode.path("metadata").path("idempotencyKey").asString(),
+                StripeAmounts.toDecimal(sessionNode.path("amount_total").asLong(), currencyCode),
+                Currency.valueOf(currencyCode.toUpperCase()));
 
         transactionTemplate.execute(status -> {
-            LedgerTransaction transaction = fundingService.postDeposit(userId, UserAccountType.CHECKING, FundingType.STRIPE, amount, idempotencyKey);
-            processedWebhookEventDao.markProcessed(rowId, transaction.id());
+            checkoutProcessor.processIfPaid(session)
+                    .ifPresent(transaction -> processedWebhookEventDao.markProcessed(rowId, transaction.id()));
             return null;
         });
     }

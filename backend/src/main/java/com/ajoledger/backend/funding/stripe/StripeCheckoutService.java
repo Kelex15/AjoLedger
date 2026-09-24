@@ -1,6 +1,7 @@
 package com.ajoledger.backend.funding.stripe;
 
 import com.stripe.StripeClient;
+import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.RequestOptions;
@@ -10,7 +11,9 @@ import com.ajoledger.backend.account.Currency;
 import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.account.entity.UserAccount;
 import com.ajoledger.backend.account.repository.UserAccountRepository;
+import com.ajoledger.backend.funding.stripe.exception.CheckoutSessionNotFoundException;
 import com.ajoledger.backend.funding.stripe.exception.StripeCheckoutFailedException;
+import com.ajoledger.backend.ledger.LedgerTransaction;
 import com.ajoledger.backend.system.AppProperties;
 
 import lombok.RequiredArgsConstructor;
@@ -18,6 +21,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -27,6 +32,7 @@ public class StripeCheckoutService {
     private final StripeClient stripeClient;
     private final AppProperties appProperties;
     private final UserAccountRepository userAccountRepository;
+    private final StripeCheckoutProcessor checkoutProcessor;
 
     public String createDepositCheckoutSession(UUID userId, BigDecimal amount, String idempotencyKey) {
         UserAccount checkingAccount = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.CHECKING);
@@ -38,7 +44,7 @@ public class StripeCheckoutService {
 
         SessionCreateParams params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.PAYMENT)
-                .setSuccessUrl(frontendBaseUrl + "/?depositStatus=success")
+                .setSuccessUrl(frontendBaseUrl + "/?depositStatus=success&session_id={CHECKOUT_SESSION_ID}")
                 .setCancelUrl(frontendBaseUrl + "/?depositStatus=cancelled")
                 .putMetadata("userId", userId.toString())
                 .putMetadata("idempotencyKey", idempotencyKey)
@@ -64,5 +70,39 @@ public class StripeCheckoutService {
         } catch (StripeException e) {
             throw new StripeCheckoutFailedException("Failed to create Stripe checkout session", e);
         }
+    }
+
+    /** Called when the frontend lands back from checkout, in case the webhook hasn't landed yet.
+     * Fetches the session fresh from Stripe rather than trusting anything the caller sent, so it
+     * also covers a webhook that never arrives at all, not just one still in flight. */
+    public Optional<LedgerTransaction> verifyAndHeal(UUID currentUserId, String sessionId) {
+        Session session = retrieveOwnedSession(currentUserId, sessionId);
+        String currencyCode = session.getCurrency();
+        PaidCheckoutSession paidSession = new PaidCheckoutSession(
+                session.getId(),
+                session.getPaymentStatus(),
+                currentUserId,
+                session.getMetadata().get("idempotencyKey"),
+                StripeAmounts.toDecimal(session.getAmountTotal(), currencyCode),
+                Currency.valueOf(currencyCode.toUpperCase()));
+        return checkoutProcessor.processIfPaid(paidSession);
+    }
+
+    private Session retrieveOwnedSession(UUID currentUserId, String sessionId) {
+        Session session;
+        try {
+            session = stripeClient.checkout().sessions().retrieve(sessionId);
+        } catch (InvalidRequestException e) {
+            throw new CheckoutSessionNotFoundException(sessionId);
+        } catch (StripeException e) {
+            throw new StripeCheckoutFailedException("Failed to retrieve Stripe checkout session", e);
+        }
+
+        Map<String, String> metadata = session.getMetadata();
+        String ownerId = metadata == null ? null : metadata.get("userId");
+        if (!currentUserId.toString().equals(ownerId)) {
+            throw new CheckoutSessionNotFoundException(sessionId);
+        }
+        return session;
     }
 }

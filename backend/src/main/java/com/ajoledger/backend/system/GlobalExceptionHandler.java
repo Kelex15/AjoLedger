@@ -27,6 +27,7 @@ import com.ajoledger.backend.circle.exception.CircleNotFoundException;
 import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
 import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
 import com.ajoledger.backend.circle.exception.InviteNotFoundException;
+import com.ajoledger.backend.funding.stripe.exception.CheckoutSessionNotFoundException;
 import com.ajoledger.backend.funding.stripe.exception.StripeCheckoutFailedException;
 import com.stripe.exception.SignatureVerificationException;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
@@ -131,6 +132,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(StripeCheckoutFailedException.class)
     public ResponseEntity<MessageResponseDTO> handleStripeCheckoutFailed(StripeCheckoutFailedException e) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(CheckoutSessionNotFoundException.class)
+    public ResponseEntity<MessageResponseDTO> handleCheckoutSessionNotFound(CheckoutSessionNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new MessageResponseDTO(e.getMessage()));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
