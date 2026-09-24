@@ -10,7 +10,7 @@ The frontend is deliberately a lighter build than the backend — it exists to d
 
 React 19 + Vite + TypeScript.
 
-React because it's the most widely recognized frontend library, which means less risk of getting stuck on framework-specific weirdness and more time available for the backend. I'm also using React Compiler (`babel-plugin-react-compiler`, wired in via `@rolldown/plugin-babel` in `vite.config.ts`) so re-render optimization is handled automatically instead of me hand-writing `useMemo`/`useCallback` everywhere — appropriate given this isn't where I want to spend manual-optimization effort.
+React because it's the most widely recognized frontend library, which means less risk of getting stuck on framework-specific weirdness and more time available for the backend. I'm also using React Compiler (`babel-plugin-react-compiler`, wired in via `@rolldown/plugin-babel` in the Vite config) so re-render optimization is handled automatically instead of me hand-writing `useMemo`/`useCallback` everywhere — appropriate given this isn't where I want to spend manual-optimization effort.
 
 Vite for the build tool: near-instant dev server startup and HMR, minimal config to get moving, and native TypeScript support without a separate compile step for local dev.
 
