@@ -12,6 +12,7 @@ write_files:
       STRIPE_API_KEY_ARN=${stripe_api_key_arn}
       STRIPE_WEBHOOK_SECRET_ARN=${stripe_webhook_secret_arn}
       DB_SECRET_ARN=${db_secret_arn}
+      GOOGLE_OAUTH_CLIENT_ID=${google_oauth_client_id}
   - path: /opt/ajoledger/deploy.sh
     permissions: '0755'
     content: |

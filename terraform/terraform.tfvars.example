@@ -1,3 +1,4 @@
-domain_name  = "ajoledger.xyz"
-github_repo  = "Kelex15/ajoledger"
-aws_region   = "us-east-1"
+domain_name            = "ajoledger.xyz"
+github_repo            = "Kelex15/AjoLedger"
+aws_region             = "us-east-1"
+google_oauth_client_id = "your-client-id.apps.googleusercontent.com"

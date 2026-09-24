@@ -38,3 +38,8 @@ variable "ec2_instance_type" {
   type        = string
   default     = "t4g.small"
 }
+
+variable "google_oauth_client_id" {
+  description = "Google OAuth web client id"
+  type        = string
+}
