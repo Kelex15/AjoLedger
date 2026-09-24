@@ -18,7 +18,7 @@ variable "domain_name" {
 variable "github_repo" {
   description = "GitHub repo allowed to assume the CI/CD deploy role, as \"owner/repo\""
   type        = string
-  default     = "Kelex15/ajoledger"
+  default     = "Kelex15/AjoLedger"
 }
 
 variable "db_instance_class" {
