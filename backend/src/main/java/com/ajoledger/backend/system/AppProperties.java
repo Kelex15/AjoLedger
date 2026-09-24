@@ -24,9 +24,10 @@ public record AppProperties(Jwt jwt, Cors cors, Security security, Google google
     }
 
     public record Scheduler(String deadlineCheckCron, String enrollmentCloseCron, String reconciliationCron,
-                             int reconciliationLookbackHours) {
+                             int reconciliationLookbackHours, String hashChainSealCron) {
     }
 
-    public record Stripe(String apiKey, String webhookSecret) {
+    public record Stripe(String apiKey, String webhookSecret, int connectTimeoutMs, int readTimeoutMs,
+                          int maxNetworkRetries) {
     }
 }

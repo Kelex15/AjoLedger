@@ -12,6 +12,12 @@ public class StripeConfig {
 
     @Bean
     public StripeClient stripeClient(AppProperties appProperties) {
-        return new StripeClient(appProperties.stripe().apiKey());
+        AppProperties.Stripe stripe = appProperties.stripe();
+        return StripeClient.builder()
+                .setApiKey(stripe.apiKey())
+                .setConnectTimeout(stripe.connectTimeoutMs())
+                .setReadTimeout(stripe.readTimeoutMs())
+                .setMaxNetworkRetries(stripe.maxNetworkRetries())
+                .build();
     }
 }
