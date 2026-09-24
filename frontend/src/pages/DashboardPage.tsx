@@ -33,13 +33,15 @@ export function DashboardPage() {
   // Landed back here from Stripe's hosted checkout. If the webhook already posted the deposit
   // this is a no-op; if it hasn't (or never will), this is what actually posts it.
   const [searchParams, setSearchParams] = useSearchParams()
-  const [depositBanner, setDepositBanner] = useState<'success' | 'cancelled' | null>(null)
+  const [depositBanner] = useState<'success' | 'cancelled' | null>(() => {
+    const status = searchParams.get('depositStatus')
+    return status === 'success' || status === 'cancelled' ? status : null
+  })
   useEffect(() => {
     const depositStatus = searchParams.get('depositStatus')
     if (depositStatus !== 'success' && depositStatus !== 'cancelled') {
       return
     }
-    setDepositBanner(depositStatus)
     const sessionId = searchParams.get('session_id')
     if (depositStatus === 'success' && sessionId) {
       verifyStripeCheckoutSession(sessionId)
