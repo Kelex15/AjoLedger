@@ -61,6 +61,24 @@ export interface CircleHistoryEntry {
   joinedAt: string
 }
 
+export interface CirclePayout {
+  id: string
+  roundNumber: number
+  recipientUserId: string
+  recipientUsername: string
+  amount: number | null
+  currency: string
+  paidAt: string
+}
+
+export function fetchCircle(circleId: string) {
+  return apiFetch<Circle>(`/api/circles/${circleId}`)
+}
+
+export function fetchCirclePayouts(circleId: string) {
+  return apiFetch<CirclePayout[]>(`/api/circles/${circleId}/payouts`)
+}
+
 export function fetchMyCircle() {
   return apiFetch<Circle>('/api/circles/me')
 }

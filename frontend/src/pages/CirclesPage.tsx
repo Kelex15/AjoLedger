@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Check, Crown, History, Plus, Ticket, Users } from 'lucide-react'
 import {
   banMember,
   cancelCircle,
@@ -21,16 +22,28 @@ import {
 import { ApiError } from '../api/client'
 import { queryKeys } from '../api/queryKeys'
 import { useAuth } from '../auth/useAuth'
+import { AmountInput } from '../components/AmountInput'
+import { CircleCard } from '../components/CircleCard'
+import { CircleDetailDialog } from '../components/CircleDetailDialog'
+import { DatePicker } from '../components/DatePicker'
+import { EmptyState } from '../components/EmptyState'
 import { ErrorMessage } from '../components/ErrorMessage'
+import { FieldError } from '../components/FieldError'
+import { NumberInput } from '../components/NumberInput'
+import { PageHeader } from '../components/PageHeader'
+import { StatusBadge } from '../components/StatusBadge'
 import { env } from '../config/env'
+import { useFormErrors } from '../hooks/useFormErrors'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export function CirclesPage() {
   const { data: circle, isLoading } = useQuery({
@@ -48,21 +61,22 @@ export function CirclesPage() {
   })
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Circles</h1>
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Circles" description="Rotating savings groups you're part of." />
+      {isLoading ? <Skeleton className="h-48 w-full rounded-xl" /> : circle ? <MyCircle circle={circle} /> : <NoCircle />}
       <MyCircleHistory />
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : circle ? (
-        <MyCircle circle={circle} />
-      ) : (
-        <NoCircle />
-      )}
     </div>
   )
 }
 
+function endOfDay(date: Date) {
+  const end = new Date(date)
+  end.setHours(23, 59, 59, 999)
+  return end
+}
+
 function MyCircleHistory() {
+  const [viewing, setViewing] = useState<string | null>(null)
   const { data: history } = useQuery({
     queryKey: queryKeys.myCircleHistory,
     queryFn: fetchMyCircleHistory,
@@ -75,28 +89,37 @@ function MyCircleHistory() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>My circles</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <History className="size-4 text-muted-foreground" />
+          Past circles
+        </CardTitle>
       </CardHeader>
       <CardContent>
-        <ul className="flex flex-col gap-3">
+        <ul className="-mx-2 divide-y divide-border">
           {history.map((entry) => (
-            <li
-              key={entry.circleId}
-              className="flex items-center justify-between gap-4 rounded-lg border border-border p-3"
-            >
-              <div className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">{entry.circleName}</span>
-                {entry.position != null && (
-                  <span className="text-muted-foreground">Position {entry.position}</span>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Badge variant="secondary">{entry.membershipStatus}</Badge>
-                <Badge variant="outline">{entry.circleStatus}</Badge>
-              </div>
+            <li key={entry.circleId}>
+              <button
+                type="button"
+                onClick={() => setViewing(entry.circleId)}
+                className="flex w-full items-center justify-between gap-4 rounded-lg px-2 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-sm font-medium">{entry.circleName}</span>
+                  {entry.position != null && (
+                    <span data-numeric className="text-xs text-muted-foreground">
+                      Position {entry.position}
+                    </span>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <StatusBadge status={entry.membershipStatus} />
+                  <StatusBadge status={entry.circleStatus} />
+                </div>
+              </button>
             </li>
           ))}
         </ul>
+        <CircleDetailDialog circleId={viewing} onOpenChange={(open) => !open && setViewing(null)} />
       </CardContent>
     </Card>
   )
@@ -106,6 +129,7 @@ function BrowseCircles({ onJoined }: { onJoined: () => void }) {
   const queryClient = useQueryClient()
   const [joiningId, setJoiningId] = useState<string | null>(null)
   const [joinError, setJoinError] = useState<string | null>(null)
+  const [viewing, setViewing] = useState<string | null>(null)
 
   const { data: openCircles } = useQuery({
     queryKey: queryKeys.openCircles,
@@ -138,51 +162,41 @@ function BrowseCircles({ onJoined }: { onJoined: () => void }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Browse circles</CardTitle>
+        <CardTitle>Open circles</CardTitle>
+        <CardDescription>Anyone can join these, subject to their entry rules.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {(!openCircles || openCircles.length === 0) && (
-          <p className="text-sm text-muted-foreground">No circles to join right now.</p>
+          <EmptyState
+            icon={Users}
+            title="No circles to join right now"
+            description="Start one below and invite people to it."
+          />
         )}
+
         {openCircles && openCircles.length > 0 && (
           <ul className="flex flex-col gap-3">
             {openCircles.map((openCircle) => (
-              <li
-                key={openCircle.id}
-                className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="flex flex-col gap-1.5 text-sm">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="font-medium">{openCircle.name}</span>
-                    {openCircle.gated && <Badge variant="outline">Invite-only</Badge>}
-                    {openCircle.minReputationScore != null && (
-                      <Badge variant="secondary">Min reputation {openCircle.minReputationScore}</Badge>
-                    )}
-                  </div>
-                  <p className="text-muted-foreground">{openCircle.description}</p>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <span>
-                      {openCircle.contributionAmount.toFixed(2)} {openCircle.currency}/round
-                    </span>
-                    <span>{openCircle.term}wk term</span>
-                    <span>{openCircle.maxMembers} members</span>
-                    <span>
-                      {openCircle.collateral.toFixed(2)} {openCircle.currency} collateral
-                    </span>
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => handleJoin(openCircle.id)}
-                  disabled={joinMutation.isPending && joiningId === openCircle.id}
-                >
-                  {joinMutation.isPending && joiningId === openCircle.id ? 'Joining…' : 'Join'}
-                </Button>
+              <li key={openCircle.id}>
+                <CircleCard
+                  circle={openCircle}
+                  onOpen={() => setViewing(openCircle.id)}
+                  action={
+                    <Button
+                      size="sm"
+                      onClick={() => handleJoin(openCircle.id)}
+                      disabled={joinMutation.isPending && joiningId === openCircle.id}
+                    >
+                      {joinMutation.isPending && joiningId === openCircle.id ? 'Joining…' : 'Join'}
+                    </Button>
+                  }
+                />
               </li>
             ))}
           </ul>
         )}
         <ErrorMessage message={joinError} />
+        <CircleDetailDialog circleId={viewing} onOpenChange={(open) => !open && setViewing(null)} />
       </CardContent>
     </Card>
   )
@@ -203,20 +217,27 @@ function NoCircle() {
   const [sizingPolicyType, setSizingPolicyType] = useState<CircleSizingPolicyType>('FIXED_SIZE')
   const [maxMembers, setMaxMembers] = useState('')
   const [minMembers, setMinMembers] = useState('')
-  const [enrollmentDeadline, setEnrollmentDeadline] = useState('')
+  const [enrollmentDeadline, setEnrollmentDeadline] = useState<Date | undefined>()
   const [term, setTerm] = useState('')
   const [contributionAmount, setContributionAmount] = useState('')
   const [gated, setGated] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const { errors, validate, clearError } = useFormErrors()
 
   const createMutation = useMutation({
     mutationFn: createCircle,
     onSuccess: invalidateMembershipQueries,
   })
 
-  async function handleCreate(event: FormEvent) {
+  async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setCreateError(null)
+    const deadlineMissing = sizingPolicyType === 'OPEN_ENROLLMENT' && !enrollmentDeadline
+    if (!validate(event.currentTarget, {
+      enrollmentDeadline: deadlineMissing ? 'Pick the last day people can join.' : null,
+    })) {
+      return
+    }
     try {
       await createMutation.mutateAsync({
         name,
@@ -228,7 +249,8 @@ function NoCircle() {
         gated,
         ...(sizingPolicyType === 'OPEN_ENROLLMENT' && {
           minMembers: minMembers ? Number(minMembers) : undefined,
-          enrollmentDeadline: new Date(enrollmentDeadline).toISOString(),
+          // The chosen day is inclusive, and enrollment is swept daily at midnight.
+          enrollmentDeadline: endOfDay(enrollmentDeadline!).toISOString(),
         }),
       })
     } catch (err) {
@@ -239,6 +261,7 @@ function NoCircle() {
   const [code, setCode] = useState('')
   const [redeemedCircle, setRedeemedCircle] = useState<Circle | null>(null)
   const [redeemError, setRedeemError] = useState<string | null>(null)
+  const { errors: redeemErrors, validate: validateRedeem, clearError: clearRedeemError } = useFormErrors()
 
   const redeemMutation = useMutation({ mutationFn: redeemInvite })
   const joinMutation = useMutation({
@@ -249,9 +272,12 @@ function NoCircle() {
     },
   })
 
-  async function handleRedeem(event: FormEvent) {
+  async function handleRedeem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setRedeemError(null)
+    if (!validateRedeem(event.currentTarget)) {
+      return
+    }
     try {
       setRedeemedCircle(await redeemMutation.mutateAsync(code))
     } catch (err) {
@@ -271,110 +297,156 @@ function NoCircle() {
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-sm text-muted-foreground">You're not in a circle yet.</p>
-
       <BrowseCircles onJoined={() => setRedeemedCircle(null)} />
 
       <Card>
         <CardHeader>
-          <CardTitle>Start a circle</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Plus className="size-4 text-muted-foreground" />
+            Start a circle
+          </CardTitle>
+          <CardDescription>You'll be its first member and set the terms.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleCreate} className="flex flex-col gap-4">
+          <form onSubmit={handleCreate} noValidate className="flex flex-col gap-4">
             <div className="grid gap-1.5">
               <Label htmlFor="circle-name">Name</Label>
-              <Input id="circle-name" value={name} onChange={(event) => setName(event.target.value)} required />
+              <Input
+                id="circle-name"
+                name="name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                onInput={() => clearError('name')}
+                aria-invalid={Boolean(errors.name)}
+                data-required-message="Give your circle a name."
+                required
+              />
+              <FieldError message={errors.name} />
             </div>
 
             <div className="grid gap-1.5">
               <Label htmlFor="circle-description">Description</Label>
               <Input
                 id="circle-description"
+                name="description"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
+                onInput={() => clearError('description')}
+                aria-invalid={Boolean(errors.description)}
+                data-required-message="Describe what this circle is for."
                 required
               />
+              <FieldError message={errors.description} />
             </div>
 
-            <div className="grid gap-1.5">
-              <Label htmlFor="circle-sizing">Sizing</Label>
-              <Select
-                value={sizingPolicyType}
-                onValueChange={(value) => setSizingPolicyType(value as CircleSizingPolicyType)}
-              >
-                <SelectTrigger id="circle-sizing">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="FIXED_SIZE">Fixed size</SelectItem>
-                  <SelectItem value="OPEN_ENROLLMENT">Open enrollment</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="circle-sizing">Sizing</Label>
+                <Select
+                  value={sizingPolicyType}
+                  onValueChange={(value) => setSizingPolicyType(value as CircleSizingPolicyType)}
+                >
+                  <SelectTrigger id="circle-sizing">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="FIXED_SIZE">Fixed size</SelectItem>
+                    <SelectItem value="OPEN_ENROLLMENT">Open enrollment</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="grid gap-1.5">
-              <Label htmlFor="circle-max-members">
-                {sizingPolicyType === 'FIXED_SIZE' ? 'Members' : 'Max members'}
-              </Label>
-              <Input
-                id="circle-max-members"
-                type="number"
-                min="2"
-                value={maxMembers}
-                onChange={(event) => setMaxMembers(event.target.value)}
-                required
-              />
+              <div className="grid gap-1.5">
+                <Label htmlFor="circle-max-members">
+                  {sizingPolicyType === 'FIXED_SIZE' ? 'Members' : 'Max members'}
+                </Label>
+                <NumberInput
+                  id="circle-max-members"
+                  name="maxMembers"
+                  min={2}
+                  value={maxMembers}
+                  onValueChange={(next) => {
+                    setMaxMembers(next)
+                    clearError('maxMembers')
+                  }}
+                  aria-invalid={Boolean(errors.maxMembers)}
+                  data-required-message="Set how many people can join."
+                  required
+                />
+                <FieldError message={errors.maxMembers} />
+              </div>
             </div>
 
             {sizingPolicyType === 'OPEN_ENROLLMENT' && (
-              <>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-1.5">
-                  <Label htmlFor="circle-min-members">Min members (optional, defaults to 2)</Label>
-                  <Input
+                  <Label htmlFor="circle-min-members">Min members</Label>
+                  <NumberInput
                     id="circle-min-members"
-                    type="number"
-                    min="2"
+                    name="minMembers"
+                    min={2}
+                    placeholder="2"
                     value={minMembers}
-                    onChange={(event) => setMinMembers(event.target.value)}
+                    onValueChange={(next) => {
+                      setMinMembers(next)
+                      clearError('minMembers')
+                    }}
+                    aria-invalid={Boolean(errors.minMembers)}
                   />
+                  <FieldError message={errors.minMembers} />
                 </div>
 
                 <div className="grid gap-1.5">
-                  <Label htmlFor="circle-enrollment-deadline">Enrollment deadline</Label>
-                  <Input
+                  <Label htmlFor="circle-enrollment-deadline">Enrollment closes after</Label>
+                  <DatePicker
                     id="circle-enrollment-deadline"
-                    type="datetime-local"
                     value={enrollmentDeadline}
-                    onChange={(event) => setEnrollmentDeadline(event.target.value)}
-                    required
+                    onSelect={(date) => {
+                      setEnrollmentDeadline(date)
+                      clearError('enrollmentDeadline')
+                    }}
+                    disabled={(date) => date < new Date(new Date().toDateString())}
                   />
+                  <FieldError message={errors.enrollmentDeadline} />
                 </div>
-              </>
+              </div>
             )}
 
-            <div className="grid gap-1.5">
-              <Label htmlFor="circle-term">Term (weeks)</Label>
-              <Input
-                id="circle-term"
-                type="number"
-                min="1"
-                value={term}
-                onChange={(event) => setTerm(event.target.value)}
-                required
-              />
-            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="circle-term">Term (weeks)</Label>
+                <NumberInput
+                  id="circle-term"
+                  name="term"
+                  min={1}
+                  value={term}
+                  onValueChange={(next) => {
+                    setTerm(next)
+                    clearError('term')
+                  }}
+                  aria-invalid={Boolean(errors.term)}
+                  data-required-message="Set how many weeks the circle runs."
+                  required
+                />
+                <FieldError message={errors.term} />
+              </div>
 
-            <div className="grid gap-1.5">
-              <Label htmlFor="circle-contribution">Contribution amount</Label>
-              <Input
-                id="circle-contribution"
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={contributionAmount}
-                onChange={(event) => setContributionAmount(event.target.value)}
-                required
-              />
+              <div className="grid gap-1.5">
+                <Label htmlFor="circle-contribution">Contribution per round</Label>
+                <AmountInput
+                  id="circle-contribution"
+                  name="contributionAmount"
+                  value={contributionAmount}
+                  onValueChange={(next) => {
+                    setContributionAmount(next)
+                    clearError('contributionAmount')
+                  }}
+                  aria-invalid={Boolean(errors.contributionAmount)}
+                  data-required-message="Set the amount each member pays per round."
+                  required
+                />
+                <FieldError message={errors.contributionAmount} />
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -384,7 +456,7 @@ function NoCircle() {
 
             <ErrorMessage message={createError} />
 
-            <Button type="submit" disabled={createMutation.isPending}>
+            <Button type="submit" className="self-start" disabled={createMutation.isPending}>
               {createMutation.isPending ? 'Creating…' : 'Create circle'}
             </Button>
           </form>
@@ -393,24 +465,37 @@ function NoCircle() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Join with an invite</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Ticket className="size-4 text-muted-foreground" />
+            Join with an invite
+          </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <form onSubmit={handleRedeem} className="flex flex-col gap-4">
-            <div className="grid gap-1.5">
-              <Label htmlFor="invite-code">Invite code</Label>
-              <Input id="invite-code" value={code} onChange={(event) => setCode(event.target.value)} required />
+          <form onSubmit={handleRedeem} noValidate className="grid gap-1.5">
+            <Label htmlFor="invite-code">Invite code</Label>
+            <div className="flex gap-2">
+              <Input
+                id="invite-code"
+                name="code"
+                className="flex-1"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                onInput={() => clearRedeemError('code')}
+                aria-invalid={Boolean(redeemErrors.code)}
+                data-required-message="Enter the invite code you were sent."
+                required
+              />
+              <Button type="submit" variant="outline" disabled={redeemMutation.isPending}>
+                {redeemMutation.isPending ? 'Checking…' : 'Redeem'}
+              </Button>
             </div>
-
-            <Button type="submit" disabled={redeemMutation.isPending}>
-              {redeemMutation.isPending ? 'Checking…' : 'Redeem code'}
-            </Button>
+            <FieldError message={redeemErrors.code} />
           </form>
 
           {redeemedCircle && (
             <>
               <Separator />
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-4">
                 <p className="text-sm">
                   Invite is for <strong>{redeemedCircle.name}</strong>: {redeemedCircle.description}
                 </p>
@@ -547,15 +632,19 @@ function MyCircle({ circle }: { circle: Circle }) {
   const [inviteByEmail, setInviteByEmail] = useState(false)
   const [inviteCode, setInviteCode] = useState<string | null>(null)
   const [inviteError, setInviteError] = useState<string | null>(null)
+  const { errors: inviteErrors, validate: validateInvite, clearError: clearInviteError } = useFormErrors()
 
   const inviteMutation = useMutation({
     mutationFn: () =>
       inviteToCircle(circle.id, inviteByEmail ? { email: inviteTarget } : { username: inviteTarget }),
   })
 
-  async function handleInvite(event: FormEvent) {
+  async function handleInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setInviteError(null)
+    if (!validateInvite(event.currentTarget)) {
+      return
+    }
     try {
       const invite = await inviteMutation.mutateAsync()
       setInviteCode(invite.code)
@@ -567,100 +656,94 @@ function MyCircle({ circle }: { circle: Circle }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>{circle.name}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <p className="text-sm text-muted-foreground">{circle.description}</p>
-          <ul className="flex flex-col gap-1 text-sm">
-            <li className="flex justify-between">
-              <span>Status</span>
-              <Badge variant="secondary">{circle.status}</Badge>
-            </li>
-            <li className="flex justify-between">
-              <span>Round</span>
-              <span>
-                {circle.currentRound} of {circle.totalRounds}
-              </span>
-            </li>
-            <li className="flex justify-between">
-              <span>Term</span>
-              <span>{circle.term} week(s)</span>
-            </li>
-            <li className="flex justify-between">
-              <span>Contribution</span>
-              <span>
-                {circle.contributionAmount.toFixed(2)} {circle.currency}
-              </span>
-            </li>
-            <li className="flex justify-between">
-              <span>Collateral held</span>
-              <span>
-                {circle.collateral.toFixed(2)} {circle.currency}
-              </span>
-            </li>
-            <li className="flex justify-between">
-              <span>Access</span>
-              <Badge variant="outline">{circle.gated ? 'Invite-only' : 'Open'}</Badge>
-            </li>
-          </ul>
-        </CardContent>
-      </Card>
+      <CircleCard circle={circle} />
 
       <Card>
         <CardHeader>
-          <CardTitle>Members</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="size-4 text-muted-foreground" />
+            Members
+          </CardTitle>
+          <CardDescription>Payout order is fixed when enrollment closes.</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <ul className="flex flex-col gap-3">
-            {members?.map((member) => (
-              <li key={member.userId} className="flex items-center justify-between gap-4 rounded-lg border border-border p-3">
-                <div className="flex flex-col gap-1 text-sm">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-medium">{member.userId === user?.id ? 'You' : member.username}</span>
-                    {member.userId === circle.createdByUserId && <Badge variant="outline">Creator</Badge>}
-                    {member.paid && <Badge variant="secondary">Paid</Badge>}
+        <CardContent className="flex flex-col gap-4">
+          <ul className="divide-y divide-border">
+            {members?.map((member) => {
+              const isYou = member.userId === user?.id
+              return (
+                <li key={member.userId} className="flex items-center gap-3 py-3">
+                  <span
+                    data-numeric
+                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground"
+                  >
+                    {member.payoutPosition}
+                  </span>
+                  <Avatar className="size-8 shrink-0">
+                    <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
+                      {member.username.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="truncate text-sm font-medium">{isYou ? 'You' : member.username}</span>
+                      {member.userId === circle.createdByUserId && (
+                        <Badge variant="outline">
+                          <Crown />
+                          Creator
+                        </Badge>
+                      )}
+                      {member.paid && (
+                        <Badge variant="secondary" className="text-success">
+                          <Check />
+                          Paid
+                        </Badge>
+                      )}
+                    </div>
+                    <span data-numeric className="text-xs text-muted-foreground">
+                      Reputation {member.reputationScore.toFixed(2)} · {member.status.toLowerCase()}
+                    </span>
                   </div>
-                  <p className="text-muted-foreground">
-                    Position {member.payoutPosition}, {member.status}, reputation{' '}
-                    {member.reputationScore.toFixed(2)}
-                  </p>
-                </div>
-                {isCreator && circle.status === 'FORMING' && member.userId !== user?.id && (
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleRemove(member.userId)}
-                      disabled={removeMutation.isPending}
-                    >
-                      Remove
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => handleBan(member.userId)}
-                      disabled={banMutation.isPending}
-                    >
-                      Ban
-                    </Button>
-                  </div>
-                )}
-              </li>
-            ))}
+
+                  {isCreator && circle.status === 'FORMING' && !isYou && (
+                    <div className="flex shrink-0 gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRemove(member.userId)}
+                        disabled={removeMutation.isPending}
+                      >
+                        Remove
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleBan(member.userId)}
+                        disabled={banMutation.isPending}
+                      >
+                        Ban
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
 
           <ErrorMessage message={actionError} />
 
           {!isCreator && circle.status === 'FORMING' && (
-            <Button variant="outline" onClick={handleLeave} disabled={leaveMutation.isPending}>
+            <Button variant="outline" className="self-start" onClick={handleLeave} disabled={leaveMutation.isPending}>
               {leaveMutation.isPending ? 'Leaving…' : 'Leave circle'}
             </Button>
           )}
 
           {isCreator && circle.status === 'FORMING' && (
-            <Button variant="destructive" onClick={handleCancel} disabled={cancelMutation.isPending}>
+            <Button
+              variant="destructive"
+              className="self-start"
+              onClick={handleCancel}
+              disabled={cancelMutation.isPending}
+            >
               {cancelMutation.isPending ? 'Cancelling…' : 'Cancel circle'}
             </Button>
           )}
@@ -670,10 +753,29 @@ function MyCircle({ circle }: { circle: Circle }) {
       {isCreator && circle.status === 'FORMING' && circle.gated && (
         <Card>
           <CardHeader>
-            <CardTitle>Invite a member</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Ticket className="size-4 text-muted-foreground" />
+              Invite a member
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleInvite} className="flex flex-col gap-4">
+            <form onSubmit={handleInvite} noValidate className="flex flex-col gap-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor="invite-target">{inviteByEmail ? 'Email' : 'Username'}</Label>
+                <Input
+                  id="invite-target"
+                  name="inviteTarget"
+                  type={inviteByEmail ? 'email' : 'text'}
+                  value={inviteTarget}
+                  onChange={(event) => setInviteTarget(event.target.value)}
+                  onInput={() => clearInviteError('inviteTarget')}
+                  aria-invalid={Boolean(inviteErrors.inviteTarget)}
+                  data-required-message={inviteByEmail ? 'Enter their email address.' : 'Enter their username.'}
+                  required
+                />
+                <FieldError message={inviteErrors.inviteTarget} />
+              </div>
+
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="invite-by-email"
@@ -683,24 +785,21 @@ function MyCircle({ circle }: { circle: Circle }) {
                 <Label htmlFor="invite-by-email">By email instead of username</Label>
               </div>
 
-              <div className="grid gap-1.5">
-                <Label htmlFor="invite-target">{inviteByEmail ? 'Email' : 'Username'}</Label>
-                <Input
-                  id="invite-target"
-                  value={inviteTarget}
-                  onChange={(event) => setInviteTarget(event.target.value)}
-                  required
-                />
-              </div>
-
               <ErrorMessage message={inviteError} />
 
-              <Button type="submit" disabled={inviteMutation.isPending}>
+              <Button type="submit" className="self-start" disabled={inviteMutation.isPending}>
                 {inviteMutation.isPending ? 'Inviting…' : 'Send invite'}
               </Button>
             </form>
 
-            {inviteCode && <p className="mt-3 text-sm">Invite code: {inviteCode}</p>}
+            {inviteCode && (
+              <div className="mt-4 flex flex-col gap-1 rounded-lg bg-muted/50 px-3 py-2.5">
+                <span className="text-xs text-muted-foreground">Invite code</span>
+                <code data-numeric className="text-sm font-medium">
+                  {inviteCode}
+                </code>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
