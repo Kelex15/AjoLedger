@@ -16,10 +16,8 @@ export interface DepositFields {
   amount: number
 }
 
-// Exactly one field is set: transaction when the deposit completed synchronously, checkoutUrl
-// when it's pending and the caller should redirect there to finish it with Stripe.
+// Every deposit goes through a processor, so this is always a URL to redirect to.
 export interface DepositResult {
-  transaction: FundingTransaction | null
   checkoutUrl: string | null
 }
 
@@ -42,11 +40,18 @@ export function withdraw(fields: WithdrawalFields) {
   })
 }
 
-// Returns the transaction if the deposit was posted (either now, or already earlier by the
-// webhook), or undefined if Stripe hasn't confirmed the payment yet.
+// Undefined while Stripe hasn't confirmed the payment yet.
 export function verifyStripeCheckoutSession(sessionId: string) {
   return apiFetch<FundingTransaction | undefined>(
     `/api/funding/stripe/checkout-sessions/${encodeURIComponent(sessionId)}/verify`,
+    { method: 'POST' },
+  )
+}
+
+// Undefined while the order is approved but not yet captured.
+export function settlePayPalOrder(orderId: string) {
+  return apiFetch<FundingTransaction | undefined>(
+    `/api/funding/paypal/orders/${encodeURIComponent(orderId)}/settle`,
     { method: 'POST' },
   )
 }

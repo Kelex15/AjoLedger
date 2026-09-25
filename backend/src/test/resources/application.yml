@@ -17,3 +17,6 @@ ajoledger:
   stripe:
     api-key: sk_test_dummy
     webhook-secret: whsec_test_dummy
+  paypal:
+    client-id: paypal_test_dummy
+    client-secret: paypal_test_dummy_secret

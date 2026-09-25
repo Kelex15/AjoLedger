@@ -1,5 +1,6 @@
 package com.ajoledger.backend.scheduler;
 
+import com.ajoledger.backend.funding.paypal.PayPalReconciliationService;
 import com.ajoledger.backend.funding.stripe.ReconciliationService;
 import com.ajoledger.backend.system.AppProperties;
 
@@ -19,6 +20,7 @@ public class ReconciliationScheduler {
     private static final Logger log = LoggerFactory.getLogger(ReconciliationScheduler.class);
 
     private final ReconciliationService reconciliationService;
+    private final PayPalReconciliationService payPalReconciliationService;
     private final AppProperties appProperties;
 
     @Scheduled(cron = "${ajoledger.scheduler.reconciliation-cron}")
@@ -27,7 +29,12 @@ public class ReconciliationScheduler {
         try {
             reconciliationService.reconcile(since);
         } catch (Exception e) {
-            log.error("Reconciliation run failed", e);
+            log.error("Stripe reconciliation run failed", e);
+        }
+        try {
+            payPalReconciliationService.reconcile(since);
+        } catch (Exception e) {
+            log.error("PayPal reconciliation run failed", e);
         }
     }
 }

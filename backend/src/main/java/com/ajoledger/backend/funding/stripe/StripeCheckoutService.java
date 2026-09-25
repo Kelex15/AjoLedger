@@ -11,6 +11,8 @@ import com.ajoledger.backend.account.Currency;
 import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.account.entity.UserAccount;
 import com.ajoledger.backend.account.repository.UserAccountRepository;
+import com.ajoledger.backend.funding.DepositProvider;
+import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.funding.stripe.exception.CheckoutSessionNotFoundException;
 import com.ajoledger.backend.funding.stripe.exception.StripeCheckoutFailedException;
 import com.ajoledger.backend.ledger.LedgerTransaction;
@@ -27,14 +29,20 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class StripeCheckoutService {
+public class StripeCheckoutService implements DepositProvider {
 
     private final StripeClient stripeClient;
     private final AppProperties appProperties;
     private final UserAccountRepository userAccountRepository;
     private final StripeCheckoutProcessor checkoutProcessor;
 
-    public String createDepositCheckoutSession(UUID userId, BigDecimal amount, String idempotencyKey) {
+    @Override
+    public FundingType fundingType() {
+        return FundingType.STRIPE;
+    }
+
+    @Override
+    public String createDeposit(UUID userId, BigDecimal amount, String idempotencyKey) {
         UserAccount checkingAccount = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.CHECKING);
         Currency currency = checkingAccount.getCurrency();
         String frontendBaseUrl = appProperties.frontend().baseUrl();
@@ -72,10 +80,10 @@ public class StripeCheckoutService {
         }
     }
 
-    /** Called when the frontend lands back from checkout, in case the webhook hasn't landed yet.
-     * Fetches the session fresh from Stripe rather than trusting anything the caller sent, so it
+    /** Fetches the session fresh from Stripe rather than trusting anything the caller sent, so it
      * also covers a webhook that never arrives at all, not just one still in flight. */
-    public Optional<LedgerTransaction> verifyAndHeal(UUID currentUserId, String sessionId) {
+    @Override
+    public Optional<LedgerTransaction> settle(UUID currentUserId, String sessionId) {
         Session session = retrieveOwnedSession(currentUserId, sessionId);
         String currencyCode = session.getCurrency();
         PaidCheckoutSession paidSession = new PaidCheckoutSession(

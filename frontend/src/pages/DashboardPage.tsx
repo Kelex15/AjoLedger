@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router'
 import type { UserAccountType } from '../api/accounts'
 import { fetchLienStatus, fetchMyAccounts } from '../api/accounts'
 import { ApiError } from '../api/client'
-import { deposit, verifyStripeCheckoutSession, withdraw, type FundingType } from '../api/funding'
+import { deposit, settlePayPalOrder, verifyStripeCheckoutSession, withdraw, type FundingType } from '../api/funding'
 import { queryKeys } from '../api/queryKeys'
 import { lienHold, lienWithdraw, transfer } from '../api/transactions'
 import { useAuth } from '../auth/useAuth'
@@ -30,7 +30,7 @@ export function DashboardPage() {
   const [amount, setAmount] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  // Landed back here from Stripe's hosted checkout. If the webhook already posted the deposit
+  // Landed back here from a processor's hosted checkout. If the webhook already posted the deposit
   // this is a no-op; if it hasn't (or never will), this is what actually posts it.
   const [searchParams, setSearchParams] = useSearchParams()
   const [depositBanner] = useState<'success' | 'cancelled' | null>(() => {
@@ -43,8 +43,14 @@ export function DashboardPage() {
       return
     }
     const sessionId = searchParams.get('session_id')
+    // PayPal names the returned order id 'token'.
+    const paypalOrderId = searchParams.get('provider') === 'paypal' ? searchParams.get('token') : null
     if (depositStatus === 'success' && sessionId) {
       verifyStripeCheckoutSession(sessionId)
+        .catch(() => null)
+        .finally(() => queryClient.invalidateQueries({ queryKey: queryKeys.accounts }))
+    } else if (depositStatus === 'success' && paypalOrderId) {
+      settlePayPalOrder(paypalOrderId)
         .catch(() => null)
         .finally(() => queryClient.invalidateQueries({ queryKey: queryKeys.accounts }))
     } else if (depositStatus === 'success') {
@@ -53,6 +59,9 @@ export function DashboardPage() {
     setSearchParams((params) => {
       params.delete('depositStatus')
       params.delete('session_id')
+      params.delete('provider')
+      params.delete('token')
+      params.delete('PayerID')
       return params
     }, { replace: true })
   }, [searchParams, queryClient, setSearchParams])

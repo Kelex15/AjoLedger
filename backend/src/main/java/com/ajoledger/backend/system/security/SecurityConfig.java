@@ -33,7 +33,8 @@ public class SecurityConfig {
     };
 
     private static final String[] PUBLIC_WEBHOOK_ENDPOINTS = {
-            "/api/funding/stripe/webhook"
+            "/api/funding/stripe/webhook",
+            "/api/funding/paypal/webhook"
     };
 
     private static final String[] ERROR_DISPATCH_ENDPOINTS = {
@@ -49,7 +50,8 @@ public class SecurityConfig {
             "/api/auth/login",
             "/api/auth/verify-email",
             "/api/auth/google",
-            "/api/funding/stripe/webhook"
+            "/api/funding/stripe/webhook",
+            "/api/funding/paypal/webhook"
     };
 
     @Bean

@@ -27,6 +27,8 @@ import com.ajoledger.backend.circle.exception.CircleNotFoundException;
 import com.ajoledger.backend.circle.exception.InviteAlreadyRedeemedException;
 import com.ajoledger.backend.circle.exception.InviteIdentityMismatchException;
 import com.ajoledger.backend.circle.exception.InviteNotFoundException;
+import com.ajoledger.backend.funding.paypal.exception.PayPalOrderFailedException;
+import com.ajoledger.backend.funding.paypal.exception.PayPalOrderNotFoundException;
 import com.ajoledger.backend.funding.stripe.exception.CheckoutSessionNotFoundException;
 import com.ajoledger.backend.funding.stripe.exception.StripeCheckoutFailedException;
 import com.stripe.exception.SignatureVerificationException;
@@ -36,8 +38,13 @@ import com.ajoledger.backend.ledger.exception.InvalidTransferTargetException;
 import com.ajoledger.backend.ledger.exception.LienWithdrawalBlockedException;
 import com.ajoledger.backend.user.exception.UserNotFoundException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(InvalidCredentialsException.class)
     public ResponseEntity<MessageResponseDTO> handleInvalidCredentials(InvalidCredentialsException e) {
@@ -129,19 +136,31 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new MessageResponseDTO("Invalid webhook signature"));
     }
 
-    @ExceptionHandler(StripeCheckoutFailedException.class)
-    public ResponseEntity<MessageResponseDTO> handleStripeCheckoutFailed(StripeCheckoutFailedException e) {
-        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(new MessageResponseDTO(e.getMessage()));
+    /** A processor's own diagnostics can name credentials, endpoints and account state, so the
+     * client gets a fixed message and the detail stays in the log. */
+    @ExceptionHandler({StripeCheckoutFailedException.class, PayPalOrderFailedException.class})
+    public ResponseEntity<MessageResponseDTO> handlePaymentProviderFailed(RuntimeException e) {
+        log.error("Payment provider call failed", e);
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(new MessageResponseDTO("Could not reach the payment provider. Please try again."));
     }
 
-    @ExceptionHandler(CheckoutSessionNotFoundException.class)
-    public ResponseEntity<MessageResponseDTO> handleCheckoutSessionNotFound(CheckoutSessionNotFoundException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new MessageResponseDTO(e.getMessage()));
+    @ExceptionHandler({PayPalOrderNotFoundException.class, CheckoutSessionNotFoundException.class})
+    public ResponseEntity<MessageResponseDTO> handleCheckoutReferenceNotFound(RuntimeException e) {
+        log.info("Checkout reference not found: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new MessageResponseDTO("Deposit not found"));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<MessageResponseDTO> handleDataIntegrityViolation(DataIntegrityViolationException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO("A conflicting record already exists"));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<MessageResponseDTO> handleUnexpected(Exception e) {
+        log.error("Unhandled exception", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new MessageResponseDTO("Something went wrong. Please try again."));
     }
 
     @Override

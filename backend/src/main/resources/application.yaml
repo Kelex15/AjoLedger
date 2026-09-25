@@ -29,7 +29,7 @@ management:
 
 ajoledger:
   jwt:
-    secret: ${JWT_SECRET} # no default on purpose - a committed fallback secret is a real vulnerability, not a convenience. Set this in your local .env.
+    secret: ${JWT_SECRET}
     access-token-expiration: ${JWT_ACCESS_EXPIRATION:900000} # 15 min in milliseconds
     refresh-token-expiration: ${JWT_REFRESH_EXPIRATION:2592000000} # 30 days in milliseconds
   cors:
@@ -52,8 +52,14 @@ ajoledger:
     reconciliation-lookback-hours: ${RECONCILIATION_LOOKBACK_HOURS:24}
     hash-chain-seal-cron: ${HASH_CHAIN_SEAL_CRON:0 * * * * *} # every minute
   stripe:
-    api-key: ${STRIPE_API_KEY} # no default on purpose, same reasoning as JWT_SECRET. Set this in your local .env.
+    api-key: ${STRIPE_API_KEY}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET}
     connect-timeout-ms: ${STRIPE_CONNECT_TIMEOUT_MS:10000}
     read-timeout-ms: ${STRIPE_READ_TIMEOUT_MS:15000} # SDK default is 80s, far too long to hold a checkout request open
     max-network-retries: ${STRIPE_MAX_NETWORK_RETRIES:2} # SDK default; safe since checkout session creation already carries an idempotency key
+  paypal:
+    client-id: ${PAYPAL_CLIENT_ID}
+    client-secret: ${PAYPAL_CLIENT_SECRET}
+    environment: ${PAYPAL_ENVIRONMENT:SANDBOX}
+    timeout-ms: ${PAYPAL_TIMEOUT_MS:15000}
+    uncaptured-grace-minutes: ${PAYPAL_UNCAPTURED_GRACE_MINUTES:30} # must exceed how long a legitimate capture can take, or reconciliation invents mismatches
