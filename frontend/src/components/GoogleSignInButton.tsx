@@ -14,7 +14,10 @@ declare global {
             client_id: string
             callback: (response: GoogleCredentialResponse) => void
           }) => void
-          renderButton: (parent: HTMLElement, options: { theme?: string; size?: string }) => void
+          renderButton: (
+            parent: HTMLElement,
+            options: { theme?: string; size?: string; width?: number },
+          ) => void
         }
       }
     }
@@ -22,6 +25,10 @@ declare global {
 }
 
 const SCRIPT_SRC = 'https://accounts.google.com/gsi/client'
+
+// Google clamps the rendered button to this range and ignores anything outside it.
+const GSI_MIN_WIDTH = 200
+const GSI_MAX_WIDTH = 400
 
 function loadGoogleScript(): Promise<void> {
   if (window.google?.accounts?.id) {
@@ -51,20 +58,41 @@ export function GoogleSignInButton({ onCredential }: { onCredential: (idToken: s
 
   useEffect(() => {
     let cancelled = false
+    let observer: ResizeObserver | undefined
+
     loadGoogleScript().then(() => {
-      if (cancelled || !buttonRef.current || !window.google) {
+      const container = buttonRef.current
+      if (cancelled || !container || !window.google) {
         return
       }
       window.google.accounts.id.initialize({
         client_id: env.googleClientId,
         callback: (response) => onCredentialRef.current(response.credential),
       })
-      window.google.accounts.id.renderButton(buttonRef.current, { theme: 'outline', size: 'large' })
+
+      // Without an explicit width Google picks its own, and the personalised
+      // "Sign in as <name>" variant is wide enough to overflow the card.
+      let rendered = 0
+      const render = () => {
+        const width = Math.round(Math.min(GSI_MAX_WIDTH, Math.max(GSI_MIN_WIDTH, container.clientWidth)))
+        if (width === rendered) {
+          return
+        }
+        rendered = width
+        container.replaceChildren()
+        window.google!.accounts.id.renderButton(container, { theme: 'outline', size: 'large', width })
+      }
+
+      render()
+      observer = new ResizeObserver(render)
+      observer.observe(container)
     })
+
     return () => {
       cancelled = true
+      observer?.disconnect()
     }
   }, [])
 
-  return <div ref={buttonRef} />
+  return <div ref={buttonRef} className="w-full" />
 }
