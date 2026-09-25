@@ -84,6 +84,15 @@ public class LedgerService {
         return ledgerDao.findLegsByTransactionId(transactionId);
     }
 
+    public Map<UUID, BigDecimal> findPayoutAmounts(List<UUID> operationIds) {
+        return ledgerTransactionDao.findPayoutAmounts(operationIds);
+    }
+
+    public List<LedgerActivity> findActivityForUser(UUID userId, String accountNumber,
+                                                      Instant beforeCreatedAt, UUID beforeEntryId, int limit) {
+        return ledgerTransactionDao.findActivityForUser(userId, accountNumber, beforeCreatedAt, beforeEntryId, limit);
+    }
+
     /** Groups every LedgerTransaction posted inside body under one LedgerOperation, and wraps
      * the whole thing in one atomic boundary */
     public <T> T postLedgerOperation(String operationType, UUID referenceId, Function<UUID, T> body) {

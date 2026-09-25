@@ -14,6 +14,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -303,4 +304,92 @@ class LedgerIntegrationTest {
                 "UPDATE ledger_entry SET debit_amount = 999 WHERE transaction_id = ?", transactionId))
                 .isInstanceOf(DataAccessException.class);
     }
+    @Test
+    void statementOnlyContainsTheUsersOwnEntries() {
+        User owner = createUser();
+        User stranger = createUser();
+        UserAccount ownerChecking = createFundedAccount(owner, UserAccountType.CHECKING, new BigDecimal("100.00"));
+        createFundedAccount(stranger, UserAccountType.CHECKING, new BigDecimal("50.00"));
+
+        List<LedgerActivity> statement = ledgerService.findActivityForUser(owner.getId(), null, null, null, 50);
+
+        assertThat(statement).isNotEmpty();
+        assertThat(statement).allSatisfy(entry ->
+                assertThat(entry.accountNumber()).isEqualTo(ownerChecking.getAccountNumber()));
+    }
+
+    @Test
+    void transferIsNegativeOnTheSourceAndPositiveOnTheDestination() {
+        User user = createUser();
+        UserAccount checking = createFundedAccount(user, UserAccountType.CHECKING, new BigDecimal("100.00"));
+        UserAccount savings = accountService.createUserAccount(user, UserAccountType.SAVINGS);
+
+        ledgerService.postTransfer(user.getId(), UserAccountType.CHECKING, user.getId(), UserAccountType.SAVINGS,
+                new BigDecimal("40.00"), UUID.randomUUID().toString());
+
+        List<LedgerActivity> statement = ledgerService.findActivityForUser(user.getId(), null, null, null, 50);
+        List<LedgerActivity> transferLegs = statement.stream()
+                .filter(entry -> entry.transactionType() == LedgerTransactionType.TRANSFER)
+                .toList();
+
+        assertThat(transferLegs).hasSize(2);
+        assertThat(transferLegs).filteredOn(entry -> entry.accountNumber().equals(checking.getAccountNumber()))
+                .singleElement()
+                .satisfies(entry -> assertThat(entry.amount()).isEqualByComparingTo("-40.00"));
+        assertThat(transferLegs).filteredOn(entry -> entry.accountNumber().equals(savings.getAccountNumber()))
+                .singleElement()
+                .satisfies(entry -> assertThat(entry.amount()).isEqualByComparingTo("40.00"));
+    }
+
+    @Test
+    void accountNumberNarrowsTheStatementAndCannotReachAnotherUsersAccount() {
+        User user = createUser();
+        User stranger = createUser();
+        UserAccount checking = createFundedAccount(user, UserAccountType.CHECKING, new BigDecimal("100.00"));
+        createFundedAccount(user, UserAccountType.SAVINGS, new BigDecimal("25.00"));
+        UserAccount strangerChecking = createFundedAccount(stranger, UserAccountType.CHECKING, new BigDecimal("70.00"));
+
+        List<LedgerActivity> ownAccount = ledgerService.findActivityForUser(
+                user.getId(), checking.getAccountNumber(), null, null, 50);
+        assertThat(ownAccount).isNotEmpty();
+        assertThat(ownAccount).allSatisfy(entry ->
+                assertThat(entry.accountType()).isEqualTo(UserAccountType.CHECKING));
+
+        List<LedgerActivity> someoneElses = ledgerService.findActivityForUser(
+                user.getId(), strangerChecking.getAccountNumber(), null, null, 50);
+        assertThat(someoneElses).isEmpty();
+    }
+
+    @Test
+    void cursorPaginationWalksEveryEntryExactlyOnce() {
+        User user = createUser();
+        UserAccount checking = createFundedAccount(user, UserAccountType.CHECKING, new BigDecimal("10.00"));
+        for (int i = 0; i < 4; i++) {
+            fundingService.postDeposit(user.getId(), UserAccountType.CHECKING, FundingType.STRIPE,
+                    new BigDecimal("10.00"), UUID.randomUUID().toString());
+        }
+
+        List<LedgerActivity> all = ledgerService.findActivityForUser(
+                user.getId(), checking.getAccountNumber(), null, null, 50);
+        assertThat(all).hasSize(5);
+
+        List<UUID> paged = new ArrayList<>();
+        Instant cursorCreatedAt = null;
+        UUID cursorEntryId = null;
+        for (int page = 0; page < 5; page++) {
+            List<LedgerActivity> rows = ledgerService.findActivityForUser(
+                    user.getId(), checking.getAccountNumber(), cursorCreatedAt, cursorEntryId, 2);
+            if (rows.isEmpty()) {
+                break;
+            }
+            rows.forEach(entry -> paged.add(entry.entryId()));
+            LedgerActivity last = rows.getLast();
+            cursorCreatedAt = last.createdAt();
+            cursorEntryId = last.entryId();
+        }
+
+        assertThat(paged).doesNotHaveDuplicates();
+        assertThat(paged).containsExactlyElementsOf(all.stream().map(LedgerActivity::entryId).toList());
+    }
+
 }
