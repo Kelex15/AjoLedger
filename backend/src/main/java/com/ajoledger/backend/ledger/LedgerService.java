@@ -61,6 +61,11 @@ public class LedgerService {
 
     public LedgerTransaction postTransferToUser(UUID fromUserId, UserAccountType fromType, String toUsername,
                                                  UserAccountType toType, BigDecimal amount, String idempotencyKey) {
+        // Paying into LIEN is unrestricted, but taking money out has to clear the withdrawal floor,
+        // and a plain transfer only checks balance sufficiency.
+        if (fromType == UserAccountType.LIEN) {
+            throw new InvalidTransferTargetException("Withdrawing from LIEN goes through the lien withdrawal endpoint");
+        }
         User recipient = userRepository.findByUsername(toUsername)
                 .orElseThrow(() -> new UserNotFoundException("User not found: " + toUsername));
         UUID toUserId = recipient.getId();

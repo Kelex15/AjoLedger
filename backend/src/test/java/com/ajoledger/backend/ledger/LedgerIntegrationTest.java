@@ -188,16 +188,16 @@ class LedgerIntegrationTest {
     }
 
     @Test
-    void transferToSelfAllowsAnyDestinationAccountType() {
+    void transferToSelfIsNotRestrictedToCheckingTheWayTransfersToOthersAre() {
         User user = createUser();
-        UserAccount savings = createFundedAccount(user, UserAccountType.SAVINGS, new BigDecimal("50.00"));
-        UserAccount lien = accountService.createUserAccount(user, UserAccountType.LIEN);
+        UserAccount checking = createFundedAccount(user, UserAccountType.CHECKING, new BigDecimal("50.00"));
+        UserAccount savings = accountService.createUserAccount(user, UserAccountType.SAVINGS);
 
-        ledgerService.postTransferToUser(user.getId(), UserAccountType.SAVINGS, user.getUsername(),
-                UserAccountType.LIEN, new BigDecimal("20.00"), UUID.randomUUID().toString());
+        ledgerService.postTransferToUser(user.getId(), UserAccountType.CHECKING, user.getUsername(),
+                UserAccountType.SAVINGS, new BigDecimal("20.00"), UUID.randomUUID().toString());
 
-        assertBalance(savings.getId(), "30.00");
-        assertBalance(lien.getId(), "20.00");
+        assertBalance(checking.getId(), "30.00");
+        assertBalance(savings.getId(), "20.00");
     }
 
     @Test
@@ -391,5 +391,28 @@ class LedgerIntegrationTest {
         assertThat(paged).doesNotHaveDuplicates();
         assertThat(paged).containsExactlyElementsOf(all.stream().map(LedgerActivity::entryId).toList());
     }
+    @Test
+    void transferCannotMoveCollateralOutOfLien() {
+        User user = createUser();
+        createFundedAccount(user, UserAccountType.CHECKING, new BigDecimal("100.00"));
+        createFundedAccount(user, UserAccountType.LIEN, new BigDecimal("100.00"));
+        accountService.createUserAccount(user, UserAccountType.SAVINGS);
 
+        assertThatThrownBy(() -> ledgerService.postTransferToUser(user.getId(), UserAccountType.LIEN,
+                user.getUsername(), UserAccountType.SAVINGS, new BigDecimal("50.00"), UUID.randomUUID().toString()))
+                .isInstanceOf(InvalidTransferTargetException.class);
+    }
+
+    @Test
+    void transferCanPayIntoLienSincePayingInIsUnrestricted() {
+        User user = createUser();
+        UserAccount checking = createFundedAccount(user, UserAccountType.CHECKING, new BigDecimal("100.00"));
+        UserAccount lien = accountService.createUserAccount(user, UserAccountType.LIEN);
+
+        ledgerService.postTransferToUser(user.getId(), UserAccountType.CHECKING, user.getUsername(),
+                UserAccountType.LIEN, new BigDecimal("50.00"), UUID.randomUUID().toString());
+
+        assertBalance(checking.getId(), "50.00");
+        assertBalance(lien.getId(), "50.00");
+    }
 }
