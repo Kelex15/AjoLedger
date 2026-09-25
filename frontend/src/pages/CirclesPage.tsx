@@ -62,7 +62,7 @@ export function CirclesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Circles" description="Rotating savings groups you're part of." />
+      <PageHeader title="Circles" />
       {isLoading ? <Skeleton className="h-48 w-full rounded-xl" /> : circle ? <MyCircle circle={circle} /> : <NoCircle />}
       <MyCircleHistory />
     </div>
