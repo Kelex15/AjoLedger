@@ -7,6 +7,8 @@ import com.stripe.model.Event;
 import com.stripe.net.Webhook;
 
 import com.ajoledger.backend.account.Currency;
+import com.ajoledger.backend.funding.processor.ProcessedWebhookEvent;
+import com.ajoledger.backend.funding.processor.ProcessedWebhookEventDao;
 import com.ajoledger.backend.system.AppProperties;
 
 import lombok.RequiredArgsConstructor;

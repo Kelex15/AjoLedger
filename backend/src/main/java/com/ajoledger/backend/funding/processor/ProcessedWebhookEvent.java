@@ -1,4 +1,4 @@
-package com.ajoledger.backend.funding.stripe;
+package com.ajoledger.backend.funding.processor;
 
 import java.time.Instant;
 import java.util.UUID;

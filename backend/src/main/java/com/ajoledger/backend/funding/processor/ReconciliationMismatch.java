@@ -1,4 +1,4 @@
-package com.ajoledger.backend.funding.stripe;
+package com.ajoledger.backend.funding.processor;
 
 import java.math.BigDecimal;
 import java.time.Instant;

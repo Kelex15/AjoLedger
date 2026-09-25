@@ -1,4 +1,4 @@
-package com.ajoledger.backend.funding.stripe;
+package com.ajoledger.backend.funding.processor;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
