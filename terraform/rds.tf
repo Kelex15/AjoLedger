@@ -9,11 +9,11 @@ resource "aws_security_group" "rds" {
   vpc_id      = data.aws_vpc.default.id
 
   ingress {
-    description = "Postgres from anywhere (portfolio project, no VPC connector)"
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "Postgres from the backend instance only"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ec2.id]
   }
 
   egress {
@@ -24,14 +24,15 @@ resource "aws_security_group" "rds" {
   }
 }
 
-# Forces TLS on every connection so a public endpoint isn't a plaintext-credentials risk.
+# Forces TLS on every connection, so credentials are never in plaintext even in-VPC.
 resource "aws_db_parameter_group" "postgres_force_ssl" {
   name   = "${var.project_name}-postgres-force-ssl"
   family = "postgres16"
 
   parameter {
-    name  = "rds.force_ssl"
-    value = "1"
+    name         = "rds.force_ssl"
+    value        = "1"
+    apply_method = "pending-reboot"
   }
 }
 
@@ -52,7 +53,7 @@ resource "aws_db_instance" "main" {
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
   parameter_group_name   = aws_db_parameter_group.postgres_force_ssl.name
-  publicly_accessible    = true
+  publicly_accessible    = false
 
   backup_retention_period = 1
   multi_az                = false
