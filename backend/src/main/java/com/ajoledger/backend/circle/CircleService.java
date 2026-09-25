@@ -55,6 +55,7 @@ public class CircleService {
     private final CircleAccountRepository circleAccountRepository;
     private final CircleMembershipRepository circleMembershipRepository;
     private final CircleInviteRepository circleInviteRepository;
+    private final CirclePayoutRepository circlePayoutRepository;
     private final CircleMemberDebitAuthorizationRepository circleMemberDebitAuthorizationRepository;
     private final Map<String, CircleSizingPolicy> sizingPoliciesByType;
     private final AccountService accountService;
@@ -374,6 +375,15 @@ public class CircleService {
 
     public List<CircleMembership> getMyMemberships(UUID userId) {
         return circleMembershipRepository.findByUser_IdOrderByJoinedAtDesc(userId);
+    }
+
+    public Circle getCircle(UUID circleId) {
+        return circleRepository.findById(circleId)
+                .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));
+    }
+
+    public List<CirclePayout> getPayouts(UUID circleId) {
+        return circlePayoutRepository.findByCircle_IdOrderByRoundNumberAsc(circleId);
     }
 
     public List<Circle> getBrowsableCircles(UUID userId) {

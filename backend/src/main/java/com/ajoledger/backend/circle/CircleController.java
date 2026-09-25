@@ -7,7 +7,9 @@ import com.ajoledger.backend.circle.dto.CircleInviteCreateRequestDTO;
 import com.ajoledger.backend.circle.dto.CircleInviteResponseDTO;
 import com.ajoledger.backend.circle.dto.CircleMemberResponseDTO;
 import com.ajoledger.backend.circle.dto.CircleMembershipResponseDTO;
+import com.ajoledger.backend.circle.dto.CirclePayoutResponseDTO;
 import com.ajoledger.backend.circle.dto.CircleResponseDTO;
+import com.ajoledger.backend.ledger.LedgerService;
 
 import jakarta.validation.Valid;
 
@@ -24,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,6 +37,7 @@ import java.util.UUID;
 public class CircleController {
 
     private final CircleService circleService;
+    private final LedgerService ledgerService;
 
     private CircleResponseDTO toResponseDTO(Circle circle) {
         BigDecimal collateral = circleService.calculateJoinCollateral(circle);
@@ -59,6 +64,23 @@ public class CircleController {
                 .map(CircleHistoryEntryDTO::fromMembership)
                 .toList();
         return ResponseEntity.ok(memberships);
+    }
+
+    @GetMapping(path = "/{circleId}", version = "1")
+    public ResponseEntity<CircleResponseDTO> circle(@PathVariable UUID circleId) {
+        return ResponseEntity.ok(toResponseDTO(circleService.getCircle(circleId)));
+    }
+
+    @GetMapping(path = "/{circleId}/payouts", version = "1")
+    public ResponseEntity<List<CirclePayoutResponseDTO>> payouts(@PathVariable UUID circleId) {
+        Currency currency = circleService.getCircleCurrency(circleId);
+        List<CirclePayout> payouts = circleService.getPayouts(circleId);
+        Map<UUID, BigDecimal> amounts = ledgerService.findPayoutAmounts(
+                payouts.stream().map(CirclePayout::getOperationId).filter(Objects::nonNull).toList());
+        return ResponseEntity.ok(payouts.stream()
+                .map(payout -> CirclePayoutResponseDTO.of(payout, currency,
+                        payout.getOperationId() == null ? null : amounts.get(payout.getOperationId())))
+                .toList());
     }
 
     @GetMapping(path = "/open", version = "1")
