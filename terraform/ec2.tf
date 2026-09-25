@@ -69,6 +69,8 @@ resource "aws_iam_role_policy" "ec2_secrets" {
         aws_secretsmanager_secret.jwt_secret.arn,
         aws_secretsmanager_secret.stripe_api_key.arn,
         aws_secretsmanager_secret.stripe_webhook_secret.arn,
+        data.aws_secretsmanager_secret.paypal_client_id.arn,
+        data.aws_secretsmanager_secret.paypal_client_secret.arn,
         aws_db_instance.main.master_user_secret[0].secret_arn,
       ]
     }]
@@ -97,6 +99,8 @@ resource "aws_instance" "backend" {
     jwt_secret_arn            = aws_secretsmanager_secret.jwt_secret.arn
     stripe_api_key_arn        = aws_secretsmanager_secret.stripe_api_key.arn
     stripe_webhook_secret_arn = aws_secretsmanager_secret.stripe_webhook_secret.arn
+    paypal_client_id_arn      = data.aws_secretsmanager_secret.paypal_client_id.arn
+    paypal_client_secret_arn  = data.aws_secretsmanager_secret.paypal_client_secret.arn
     db_secret_arn             = aws_db_instance.main.master_user_secret[0].secret_arn
     google_oauth_client_id    = var.google_oauth_client_id
     cookie_domain             = var.domain_name

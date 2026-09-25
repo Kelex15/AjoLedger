@@ -16,6 +16,10 @@ STRIPE_API_KEY=$(aws secretsmanager get-secret-value --region "$AWS_REGION" \
   --secret-id "$STRIPE_API_KEY_ARN" --query SecretString --output text)
 STRIPE_WEBHOOK_SECRET=$(aws secretsmanager get-secret-value --region "$AWS_REGION" \
   --secret-id "$STRIPE_WEBHOOK_SECRET_ARN" --query SecretString --output text)
+PAYPAL_CLIENT_ID=$(aws secretsmanager get-secret-value --region "$AWS_REGION" \
+  --secret-id "$PAYPAL_CLIENT_ID_ARN" --query SecretString --output text)
+PAYPAL_CLIENT_SECRET=$(aws secretsmanager get-secret-value --region "$AWS_REGION" \
+  --secret-id "$PAYPAL_CLIENT_SECRET_ARN" --query SecretString --output text)
 
 docker network create app-net 2>/dev/null || true
 docker volume create caddy_data 2>/dev/null || true
@@ -35,6 +39,8 @@ docker run -d \
   -e JWT_SECRET="$JWT_SECRET" \
   -e STRIPE_API_KEY="$STRIPE_API_KEY" \
   -e STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
+  -e PAYPAL_CLIENT_ID="$PAYPAL_CLIENT_ID" \
+  -e PAYPAL_CLIENT_SECRET="$PAYPAL_CLIENT_SECRET" \
   -e CORS_ALLOWED_ORIGINS="$CORS_ORIGIN" \
   -e FRONTEND_BASE_URL="$CORS_ORIGIN" \
   -e SECURE_COOKIES=true \
