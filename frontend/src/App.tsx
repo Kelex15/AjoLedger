@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { Layout } from './components/Layout'
+import { AccountPage } from './pages/AccountPage'
 import { CirclesPage } from './pages/CirclesPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
@@ -17,6 +18,7 @@ function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/account/:accountNumber" element={<AccountPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/circles" element={<CirclesPage />} />
         </Route>

@@ -17,8 +17,16 @@ export interface LienStatus {
   withdrawable: number
 }
 
-export function fetchMyAccounts() {
-  return apiFetch<Account[]>('/api/accounts/me')
+// Everyday money first, collateral last. The API returns them in no particular order.
+const DISPLAY_ORDER: UserAccountType[] = ['CHECKING', 'SAVINGS', 'LIEN']
+
+export async function fetchMyAccounts() {
+  const accounts = await apiFetch<Account[]>('/api/accounts/me')
+  return accounts.toSorted(
+    (a, b) =>
+      DISPLAY_ORDER.indexOf(a.accountType as UserAccountType) -
+      DISPLAY_ORDER.indexOf(b.accountType as UserAccountType),
+  )
 }
 
 export function fetchLienStatus() {

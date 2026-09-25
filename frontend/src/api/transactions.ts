@@ -13,6 +13,36 @@ export interface LedgerTransaction {
   createdAt: string
 }
 
+/** One ledger entry on the user's statement. Amount is signed against the account it touched:
+ * credits positive, debits negative. */
+export interface LedgerActivity {
+  entryId: string
+  transactionId: string
+  accountType: UserAccountType
+  accountNumber: string
+  amount: number
+  currency: string
+  description: string
+  transactionType: string
+  createdAt: string
+}
+
+export interface LedgerActivityPage {
+  items: LedgerActivity[]
+  nextCursor: string | null
+}
+
+export function fetchActivity(
+  params: { accountNumber?: string; cursor?: string; limit?: number } = {},
+) {
+  const search = new URLSearchParams()
+  if (params.accountNumber) search.set('accountNumber', params.accountNumber)
+  if (params.cursor) search.set('cursor', params.cursor)
+  if (params.limit) search.set('limit', String(params.limit))
+  const query = search.toString()
+  return apiFetch<LedgerActivityPage>(`/api/ledger/transactions${query ? `?${query}` : ''}`)
+}
+
 export function lienHold(amount: number) {
   return apiFetch<LedgerTransaction>('/api/ledger/lien/hold', {
     method: 'POST',
