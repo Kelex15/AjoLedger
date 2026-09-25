@@ -4,12 +4,14 @@ import { ApiError } from '../api/client'
 import { useAuth } from '../auth/useAuth'
 import { AuthLayout } from '../components/AuthLayout'
 import { ErrorMessage } from '../components/ErrorMessage'
+import { FieldError } from '../components/FieldError'
 import { GoogleSignInButton } from '../components/GoogleSignInButton'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { useFormErrors } from '../hooks/useFormErrors'
 
 export function LoginPage() {
   const { user, login, loginWithGoogle } = useAuth()
@@ -20,15 +22,19 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const { errors, validate, clearError } = useFormErrors()
 
   if (user) {
     const redirectTo = (location.state as { from?: string } | null)?.from ?? '/'
     return <Navigate to={redirectTo} replace />
   }
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    if (!validate(event.currentTarget)) {
+      return
+    }
     setIsSubmitting(true)
     try {
       await login(email, password)
@@ -52,32 +58,43 @@ export function LoginPage() {
 
   return (
     <AuthLayout>
-      <Card className="w-full max-w-sm">
+      <Card>
         <CardHeader>
-          <CardTitle>Log in</CardTitle>
+          <CardTitle className="text-xl">Welcome back</CardTitle>
+          <CardDescription>Log in to pick up where you left off.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
             <div className="grid gap-1.5">
               <Label htmlFor="login-email">Email</Label>
               <Input
                 id="login-email"
+                name="email"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
+                onInput={() => clearError('email')}
+                aria-invalid={Boolean(errors.email)}
+                data-required-message="Enter your email address."
                 required
               />
+              <FieldError message={errors.email} />
             </div>
 
             <div className="grid gap-1.5">
               <Label htmlFor="login-password">Password</Label>
               <Input
                 id="login-password"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
+                onInput={() => clearError('password')}
+                aria-invalid={Boolean(errors.password)}
+                data-required-message="Enter your password."
                 required
               />
+              <FieldError message={errors.password} />
             </div>
 
             <ErrorMessage message={error} />

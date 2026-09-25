@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import { CircleCheck, CircleX, Loader2 } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router'
 import { ApiError } from '../api/client'
 import { verifyEmail } from '../api/auth'
 import { AuthLayout } from '../components/AuthLayout'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { cn } from 'cn'
 
 export function VerifyEmailPage() {
   const [searchParams] = useSearchParams()
@@ -37,19 +40,32 @@ export function VerifyEmailPage() {
 
   return (
     <AuthLayout>
-      <Card className="w-full max-w-sm">
+      <Card>
         <CardHeader>
-          <CardTitle>Email verification</CardTitle>
+          <span
+            className={cn(
+              'flex size-10 items-center justify-center rounded-full',
+              status === 'success' && 'bg-success/12 text-success',
+              status === 'error' && 'bg-destructive/12 text-destructive',
+              status === 'pending' && 'bg-muted text-muted-foreground',
+            )}
+          >
+            {status === 'pending' && <Loader2 className="size-5 animate-spin" />}
+            {status === 'success' && <CircleCheck className="size-5" />}
+            {status === 'error' && <CircleX className="size-5" />}
+          </span>
+          <CardTitle className="text-xl">
+            {status === 'pending' ? 'Verifying your email' : status === 'success' ? 'Email verified' : "That didn't work"}
+          </CardTitle>
+          <CardDescription>{status === 'pending' ? 'One moment…' : message}</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {status === 'pending' && <p className="text-sm text-muted-foreground">Verifying…</p>}
-          {status !== 'pending' && <p className="text-sm text-muted-foreground">{message}</p>}
-          {status === 'success' && (
-            <Link to="/login" className="text-sm text-foreground underline underline-offset-4">
-              Log in
-            </Link>
-          )}
-        </CardContent>
+        {status !== 'pending' && (
+          <CardContent>
+            <Button asChild className="w-full" variant={status === 'success' ? 'default' : 'outline'}>
+              <Link to="/login">{status === 'success' ? 'Log in' : 'Back to log in'}</Link>
+            </Button>
+          </CardContent>
+        )}
       </Card>
     </AuthLayout>
   )

@@ -1,11 +1,14 @@
 import { useState, type FormEvent } from 'react'
+import { MailCheck } from 'lucide-react'
 import { Link } from 'react-router'
 import { ApiError } from '../api/client'
 import { signup } from '../api/auth'
 import { AuthLayout } from '../components/AuthLayout'
 import { ErrorMessage } from '../components/ErrorMessage'
+import { FieldError } from '../components/FieldError'
+import { useFormErrors } from '../hooks/useFormErrors'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -18,10 +21,14 @@ export function SignupPage() {
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const { errors, validate, clearError } = useFormErrors()
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    if (!validate(event.currentTarget)) {
+      return
+    }
     setIsSubmitting(true)
     try {
       const result = await signup({ username, firstName, lastName, email, password })
@@ -36,15 +43,18 @@ export function SignupPage() {
   if (successMessage) {
     return (
       <AuthLayout>
-        <Card className="w-full max-w-sm">
+        <Card>
           <CardHeader>
-            <CardTitle>Check your email</CardTitle>
+            <span className="flex size-10 items-center justify-center rounded-full bg-success/12 text-success">
+              <MailCheck className="size-5" />
+            </span>
+            <CardTitle className="text-xl">Check your email</CardTitle>
+            <CardDescription>{successMessage}</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <p className="text-sm text-muted-foreground">{successMessage}</p>
-            <Link to="/login" className="text-sm text-foreground underline underline-offset-4">
-              Back to log in
-            </Link>
+          <CardContent>
+            <Button asChild variant="outline" className="w-full">
+              <Link to="/login">Back to log in</Link>
+            </Button>
           </CardContent>
         </Card>
       </AuthLayout>
@@ -53,62 +63,90 @@ export function SignupPage() {
 
   return (
     <AuthLayout>
-      <Card className="w-full max-w-sm">
+      <Card>
         <CardHeader>
-          <CardTitle>Sign up</CardTitle>
+          <CardTitle className="text-xl">Create your account</CardTitle>
+          <CardDescription>Start saving with a circle you trust.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="signup-first-name">First name</Label>
+                <Input
+                  id="signup-first-name"
+                  name="firstName"
+                  value={firstName}
+                  onChange={(event) => setFirstName(event.target.value)}
+                  onInput={() => clearError('firstName')}
+                  aria-invalid={Boolean(errors.firstName)}
+                  data-required-message="Enter your first name."
+                  required
+                />
+                <FieldError message={errors.firstName} />
+              </div>
+
+              <div className="grid gap-1.5">
+                <Label htmlFor="signup-last-name">Last name</Label>
+                <Input
+                  id="signup-last-name"
+                  name="lastName"
+                  value={lastName}
+                  onChange={(event) => setLastName(event.target.value)}
+                  onInput={() => clearError('lastName')}
+                  aria-invalid={Boolean(errors.lastName)}
+                  data-required-message="Enter your last name."
+                  required
+                />
+                <FieldError message={errors.lastName} />
+              </div>
+            </div>
+
             <div className="grid gap-1.5">
               <Label htmlFor="signup-username">Username</Label>
               <Input
                 id="signup-username"
+                name="username"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
+                onInput={() => clearError('username')}
+                aria-invalid={Boolean(errors.username)}
+                data-required-message="Pick a username."
                 required
               />
-            </div>
-
-            <div className="grid gap-1.5">
-              <Label htmlFor="signup-first-name">First name</Label>
-              <Input
-                id="signup-first-name"
-                value={firstName}
-                onChange={(event) => setFirstName(event.target.value)}
-                required
-              />
-            </div>
-
-            <div className="grid gap-1.5">
-              <Label htmlFor="signup-last-name">Last name</Label>
-              <Input
-                id="signup-last-name"
-                value={lastName}
-                onChange={(event) => setLastName(event.target.value)}
-                required
-              />
+              <FieldError message={errors.username} />
             </div>
 
             <div className="grid gap-1.5">
               <Label htmlFor="signup-email">Email</Label>
               <Input
                 id="signup-email"
+                name="email"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
+                onInput={() => clearError('email')}
+                aria-invalid={Boolean(errors.email)}
+                data-required-message="Enter your email address."
                 required
               />
+              <FieldError message={errors.email} />
             </div>
 
             <div className="grid gap-1.5">
               <Label htmlFor="signup-password">Password</Label>
               <Input
                 id="signup-password"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
+                onInput={() => clearError('password')}
+                aria-invalid={Boolean(errors.password)}
+                data-required-message="Choose a password."
                 required
               />
+              <FieldError message={errors.password} />
             </div>
 
             <ErrorMessage message={error} />
