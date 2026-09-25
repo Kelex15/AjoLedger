@@ -18,7 +18,7 @@ export function ProfilePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Profile" description="How you appear to the rest of your circle." />
+      <PageHeader title="Profile" />
 
       <Card>
         <CardContent className="flex flex-col gap-6">

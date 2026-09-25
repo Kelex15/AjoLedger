@@ -39,10 +39,7 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title={`Welcome back, ${user?.firstName ?? ''}`}
-        description="Your balances, your circle, and where your money has been."
-      />
+      <PageHeader title={`Welcome back, ${user?.firstName ?? ''}`} />
       <CheckoutReturnBanner />
       <BalanceSummary />
       <AccountList />

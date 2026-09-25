@@ -9,11 +9,11 @@ export function AuthLayout({ children }: { children: ReactNode }) {
 
         <div className="relative z-10 flex max-w-sm flex-col gap-4">
           <h2 className="font-heading text-3xl leading-tight font-semibold tracking-tight">
-            Saving together, on a ledger you can check.
+            Save together, take turns.
           </h2>
           <p className="text-sm text-muted-foreground">
-            Rotating savings circles with the accounting made explicit: every contribution, payout and
-            hold is a double-entry transaction you can trace.
+            Circles run on trust. Here that trust is backed by collateral everyone posts up front and a
+            reputation that follows you from one circle to the next.
           </p>
         </div>
 
