@@ -946,6 +946,36 @@ class CircleServiceIntegrationTest {
     }
 
     @Test
+    void defaultWaterfallDrainsLienBeforeTouchingSavings() {
+        User defaulter = createFundedUser(new BigDecimal("500.00"));
+        Circle circle = circleService.createCircle(defaulter.getId(), createRequest(2, false)); // stays FORMING; just need its RESERVE account
+        CircleMembership membership = activeMembershipFor(circle.getId(), defaulter.getId());
+        CircleAccount reserve = accountService.getCircleAccount(circle.getId(), CircleAccountType.RESERVE).orElseThrow();
+
+        // A LIEN that covers the whole loss on its own is what makes the visit order observable.
+        fundingService.postDeposit(defaulter.getId(), UserAccountType.LIEN, FundingType.STRIPE,
+                new BigDecimal("300.00"), UUID.randomUUID().toString());
+        BigDecimal lienBefore = accountService.getUserAccount(defaulter.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+        BigDecimal savingsBefore = accountService.getUserAccount(defaulter.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
+        BigDecimal groupLoss = new BigDecimal("100.00");
+        assertThat(lienBefore).isGreaterThan(groupLoss);
+
+        circleTransactionsService.postDefaultWaterfall(defaulter.getId(), membership.getId(), reserve.getId(),
+                groupLoss, UUID.randomUUID().toString());
+
+        BigDecimal lienAfter = accountService.getUserAccount(defaulter.getId(), UserAccountType.LIEN)
+                .orElseThrow().getBalance();
+        BigDecimal savingsAfter = accountService.getUserAccount(defaulter.getId(), UserAccountType.SAVINGS)
+                .orElseThrow().getBalance();
+
+        assertThat(lienBefore.subtract(lienAfter)).isEqualByComparingTo(groupLoss);
+        assertThat(savingsAfter).isEqualByComparingTo(savingsBefore);
+        assertThat(reserveBalance(circle.getId())).isEqualByComparingTo(groupLoss);
+    }
+
+    @Test
     void positionCompactionAfterSingleWithdrawalResolvesCircleToCompletion() {
         User creator = createFundedUser(new BigDecimal("500.00"));
         User m2 = createFundedUser(exactJoinAmount(new BigDecimal("100.00"))); // enough for round 1 only
