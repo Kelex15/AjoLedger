@@ -394,10 +394,10 @@ class CircleRoundSchedulerIntegrationTest {
     }
 
     @Test
-    void defaultSeizesFromSavingsBeforeLien() {
+    void defaultSeizesFromLienBeforeSavings() {
         User memberA = createFundedUser(new BigDecimal("1000.00"));
         User memberB = createFundedUser(new BigDecimal("1000.00"));
-        CircleMembership recipientMembership = lockTwoMemberCircleAndGetRecipient("Savings First Circle", memberA, memberB);
+        CircleMembership recipientMembership = lockTwoMemberCircleAndGetRecipient("Lien First Circle", memberA, memberB);
         UUID recipientId = recipientMembership.getUser().getId();
         BigDecimal groupLoss = recipientMembership.getCircle().getContributionAmount();
 
@@ -407,7 +407,8 @@ class CircleRoundSchedulerIntegrationTest {
         forceOverdue(circleRepository.findById(recipientMembership.getCircle().getId()).orElseThrow());
 
         BigDecimal lienBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
-        BigDecimal expectedLienSeizure = groupLoss.subtract(savingsAmount);
+        BigDecimal expectedLienSeizure = lienBeforeDefault.min(groupLoss);
+        BigDecimal expectedSavingsSeizure = groupLoss.subtract(expectedLienSeizure);
 
         scheduler.runDueRoundChecks();
 
@@ -416,8 +417,8 @@ class CircleRoundSchedulerIntegrationTest {
 
         assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(
                 recipientMembership.getCircle().getId(), recipientId, MembershipStatus.DEFAULTED)).isPresent();
-        assertThat(savingsAfterDefault).isEqualByComparingTo("0.00");
         assertThat(lienBeforeDefault.subtract(lienAfterDefault)).isEqualByComparingTo(expectedLienSeizure);
+        assertThat(savingsAmount.subtract(savingsAfterDefault)).isEqualByComparingTo(expectedSavingsSeizure);
     }
 
     @Test
@@ -471,7 +472,7 @@ class CircleRoundSchedulerIntegrationTest {
 
         BigDecimal lienBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
         BigDecimal checkingBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.CHECKING).orElseThrow().getBalance();
-        BigDecimal expectedSavingsSeizure = savingsAmount.min(groupLoss).min(ceiling);
+        BigDecimal expectedLienSeizure = lienBeforeDefault.min(groupLoss).min(ceiling);
 
         scheduler.runDueRoundChecks();
 
@@ -481,11 +482,11 @@ class CircleRoundSchedulerIntegrationTest {
 
         assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(
                 recipientMembership.getCircle().getId(), recipientId, MembershipStatus.DEFAULTED)).isPresent();
-        assertThat(savingsAmount.subtract(savingsAfterDefault)).isEqualByComparingTo(expectedSavingsSeizure);
-        assertThat(lienAfterDefault).isEqualByComparingTo(lienBeforeDefault);
+        assertThat(lienBeforeDefault.subtract(lienAfterDefault)).isEqualByComparingTo(expectedLienSeizure);
+        assertThat(savingsAfterDefault).isEqualByComparingTo(savingsAmount);
         assertThat(checkingAfterDefault).isEqualByComparingTo(checkingBeforeDefault);
         assertThat(circleMemberDebitAuthorizationRepository.findByCircleMembership_Id(recipientMembership.getId())
-                .orElseThrow().getRemainingCeiling()).isEqualByComparingTo(ceiling.subtract(expectedSavingsSeizure));
+                .orElseThrow().getRemainingCeiling()).isEqualByComparingTo(ceiling.subtract(expectedLienSeizure));
     }
 
     @Test
@@ -497,20 +498,25 @@ class CircleRoundSchedulerIntegrationTest {
         BigDecimal groupLoss = recipientMembership.getCircle().getContributionAmount();
 
         BigDecimal savingsAmount = new BigDecimal("10.00");
-        BigDecimal ceiling = new BigDecimal("30.00");
-        circleTransactionsService.postLienHold(recipientId, groupLoss, UUID.randomUUID().toString());
+        BigDecimal savingsOverrun = new BigDecimal("5.00");
         fundingService.postDeposit(recipientId, UserAccountType.CHECKING, FundingType.STRIPE, groupLoss, UUID.randomUUID().toString());
         setSavingsBalance(recipientId, savingsAmount);
+
+        // Sized off the live LIEN balance so the ceiling outlasts LIEN but dies partway through
+        // SAVINGS, which is the only arrangement that exercises a cap landing mid-order.
+        BigDecimal lienBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
+        BigDecimal ceiling = lienBeforeDefault.add(savingsOverrun);
+        assertThat(lienBeforeDefault).isPositive();
+        assertThat(ceiling).isLessThanOrEqualTo(groupLoss);
+        assertThat(savingsOverrun).isLessThan(savingsAmount);
+
         CircleMemberDebitAuthorization authorization = circleMemberDebitAuthorizationRepository
                 .findByCircleMembership_Id(recipientMembership.getId()).orElseThrow();
         authorization.setRemainingCeiling(ceiling);
         circleMemberDebitAuthorizationRepository.save(authorization);
         forceOverdue(circleRepository.findById(recipientMembership.getCircle().getId()).orElseThrow());
 
-        BigDecimal lienBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.LIEN).orElseThrow().getBalance();
         BigDecimal checkingBeforeDefault = accountService.getUserAccount(recipientId, UserAccountType.CHECKING).orElseThrow().getBalance();
-        BigDecimal expectedSavingsSeizure = savingsAmount.min(groupLoss).min(ceiling);
-        BigDecimal expectedLienSeizure = ceiling.subtract(expectedSavingsSeizure);
 
         scheduler.runDueRoundChecks();
 
@@ -520,8 +526,8 @@ class CircleRoundSchedulerIntegrationTest {
 
         assertThat(circleMembershipRepository.findByCircle_IdAndUser_IdAndStatus(
                 recipientMembership.getCircle().getId(), recipientId, MembershipStatus.DEFAULTED)).isPresent();
-        assertThat(savingsAfterDefault).isEqualByComparingTo(savingsAmount.subtract(expectedSavingsSeizure));
-        assertThat(lienBeforeDefault.subtract(lienAfterDefault)).isEqualByComparingTo(expectedLienSeizure);
+        assertThat(lienAfterDefault).isEqualByComparingTo("0.00");
+        assertThat(savingsAmount.subtract(savingsAfterDefault)).isEqualByComparingTo(savingsOverrun);
         assertThat(checkingAfterDefault).isEqualByComparingTo(checkingBeforeDefault);
         assertThat(circleMemberDebitAuthorizationRepository.findByCircleMembership_Id(recipientMembership.getId())
                 .orElseThrow().getRemainingCeiling()).isEqualByComparingTo("0.00");

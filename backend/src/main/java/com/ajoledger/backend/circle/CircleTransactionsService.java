@@ -194,7 +194,9 @@ public class CircleTransactionsService {
                 amount, account.getCurrency(), description, legs, operationId));
     }
 
-    /** Default waterfall (design/v1.md §5): SAVINGS, then LIEN, then CHECKING, then the buffer. */
+    /** Default waterfall (design/v3.md §5): LIEN, then SAVINGS, then CHECKING, then the buffer.
+     *  LIEN first because a DEFAULTED membership drops its withdrawal floor to zero, so collateral
+     *  left unseized here would be withdrawable immediately afterwards. */
     public List<LedgerTransaction> postDefaultWaterfall(UUID userId, UUID circleMembershipId, UUID circleReserveAccountId,
                                                     BigDecimal groupLoss, String idempotencyKey) {
         UserAccount savings = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.SAVINGS);
@@ -209,20 +211,20 @@ public class CircleTransactionsService {
                         .remainingCeiling(groupLoss)
                         .build());
 
-        Seizure savingsSeizure = seize(savings, groupLoss, authorization.getRemainingCeiling());
-        Seizure lienSeizure = seize(lien, savingsSeizure.remainingGroupLoss(), savingsSeizure.remainingCeilingBudget());
-        Seizure checkingSeizure = seize(checking, lienSeizure.remainingGroupLoss(), lienSeizure.remainingCeilingBudget());
+        Seizure lienSeizure = seize(lien, groupLoss, authorization.getRemainingCeiling());
+        Seizure savingsSeizure = seize(savings, lienSeizure.remainingGroupLoss(), lienSeizure.remainingCeilingBudget());
+        Seizure checkingSeizure = seize(checking, savingsSeizure.remainingGroupLoss(), savingsSeizure.remainingCeilingBudget());
         BigDecimal remainingLoss = checkingSeizure.remainingGroupLoss();
-        BigDecimal totalSeized = savingsSeizure.amount().add(lienSeizure.amount()).add(checkingSeizure.amount());
+        BigDecimal totalSeized = lienSeizure.amount().add(savingsSeizure.amount()).add(checkingSeizure.amount());
 
         return ledgerService.postLedgerOperation("DEFAULT_WATERFALL", circleMembershipId, operationId -> {
             List<LedgerTransaction> transactions = new ArrayList<>();
 
-            postSeizureLegIfPositive(transactions, savings, savingsSeizure.amount(), LedgerTransactionType.SAVINGS_SEIZURE,
-                    "savings-seizure", "Savings seizure for membership " + circleMembershipId,
-                    circleReserveAccountId, idempotencyKey, operationId);
             postSeizureLegIfPositive(transactions, lien, lienSeizure.amount(), LedgerTransactionType.LIEN_SEIZURE,
                     "lien-seizure", "Lien seizure for membership " + circleMembershipId,
+                    circleReserveAccountId, idempotencyKey, operationId);
+            postSeizureLegIfPositive(transactions, savings, savingsSeizure.amount(), LedgerTransactionType.SAVINGS_SEIZURE,
+                    "savings-seizure", "Savings seizure for membership " + circleMembershipId,
                     circleReserveAccountId, idempotencyKey, operationId);
             postSeizureLegIfPositive(transactions, checking, checkingSeizure.amount(), LedgerTransactionType.CHECKING_SEIZURE,
                     "checking-seizure", "Checking seizure for membership " + circleMembershipId,
