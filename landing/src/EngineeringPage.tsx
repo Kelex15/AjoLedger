@@ -196,12 +196,29 @@ withdrawal floor = contribution * (total rounds - current round + 1)`}</Formula>
           </p>
         </Section>
 
-        <Section id="waterfall" title="What actually happens on a default">
-          <p>Losses are absorbed in a fixed order, and the last step is the one I spent longest on.</p>
+        <Section id="waterfall" title="When a member stops paying">
+          <p>
+            Two different things can go wrong here, and they are not variations of one rule. Which one applies
+            turns on whether the member has already taken their payout, because only one of the two actually
+            leaves the group short. Treating them as the same event was the mistake I most wanted to avoid.
+          </p>
+
+          <h3 className="mt-4 font-heading text-lg font-semibold text-foreground">
+            A default, after the payout
+          </h3>
+          <p>
+            This is the real loss. The member has taken the pot and owes a contribution for every round that
+            follows. Losses are absorbed in a fixed order, and the last step is the one I spent longest on.
+          </p>
           <ol className="flex list-decimal flex-col gap-3 pl-5 marker:text-primary marker:tabular-nums">
             <li>
-              The defaulter&rsquo;s own <code className="text-foreground">LIEN</code> is seized, capped at the
-              group loss.
+              The member&rsquo;s own accounts are drawn down, in order:{' '}
+              <code className="text-foreground">LIEN</code> first, since that is the money posted for exactly
+              this purpose, then <code className="text-foreground">SAVINGS</code>, then{' '}
+              <code className="text-foreground">CHECKING</code>. Each gives up what it holds until either the
+              group loss is covered or that member&rsquo;s seizure ceiling runs out, whichever binds first,
+              and each posts its own ledger entry crediting the circle&rsquo;s{' '}
+              <code className="text-foreground">RESERVE</code>.
             </li>
             <li>
               The shared buffer covers what that did not, capped at a percentage of the buffer&rsquo;s own
@@ -222,16 +239,43 @@ withdrawal floor = contribution * (total rounds - current round + 1)`}</Formula>
           <p>
             What steps one and two recover does not land in the pot directly either. It is credited to the
             circle&rsquo;s <code className="text-foreground">RESERVE</code> and released in an even share
-            across each remaining round. The loss belonged to the group, so its recovery belongs to the group
-            rather than to whichever member&rsquo;s payout happens to fall next.
+            across each remaining round. The loss belonged to the group, so its recovery belongs to the group,
+            not to whichever member&rsquo;s payout happens to fall next.
           </p>
           <p>
             One more guard sits underneath all of it. Every locked membership carries a persisted seizure
-            ceiling that is checked and decremented at the moment of seizure, rather than recomputed from the
-            live formula in that same code path, with a database{' '}
-            <code className="text-foreground">CHECK</code> constraint backing it. A future bug in the
+            ceiling, and it is a single budget covering all three accounts, decremented once by the total
+            taken, so the order they are visited in cannot be used to extract more in aggregate. It is checked
+            at the moment of seizure and never recomputed from the live formula in that same code path, with a
+            database <code className="text-foreground">CHECK</code> constraint backing it. A future bug in the
             group-loss calculation can therefore under-seize, but it can never take more from a member than
             was ever legitimately owed.
+          </p>
+
+          <h3 className="mt-6 font-heading text-lg font-semibold text-foreground">
+            A withdrawal, before the payout
+          </h3>
+          <p>
+            Missing a contribution before you have been paid is not a default, and the waterfall above does
+            not apply to it. There is no group loss to seize collateral against, because the member has taken
+            nothing out of the pot yet. They are withdrawn instead. Their position drops out of the rotation
+            and every position behind it compacts down by one.
+          </p>
+          <p>
+            They have still lost something real, though. Contributions they made in earlier rounds already
+            funded somebody else&rsquo;s payout, and at the time nothing comes back. Settlement happens once,
+            when the circle completes: whatever is left in{' '}
+            <code className="text-foreground">RESERVE</code> sweeps into the{' '}
+            <code className="text-foreground">POT</code>, the shared buffer takes its usual cut, and the
+            remainder splits across every withdrawn member weighted by how many rounds each of them actually
+            contributed. Two people who drop out at different points get shares proportional to what they each
+            put in, not an equal split that ignores it.
+          </p>
+          <p>
+            This deliberately stops short of making a withdrawn member whole. An early contribution that has
+            already funded someone else&rsquo;s payout is simply gone. Settlement only hands back what the
+            circle&rsquo;s own accounts still hold, and it never draws on the shared buffer, since that pool
+            is sized for defaults happening elsewhere on the platform.
           </p>
         </Section>
 
