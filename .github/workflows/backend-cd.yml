@@ -6,13 +6,18 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-cd.yml'
+      - '.github/workflows/backend-ci.yml'
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
+  test:
+    uses: ./.github/workflows/backend-ci.yml
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     defaults:
       run:
