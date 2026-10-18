@@ -264,7 +264,7 @@ public class AuthService {
         return issueTokens(user);
     }
 
-    /** The one deliberate exception to verification gating every session (ADR 0013). The demo user has no
+    /** The one deliberate exception to verification gating every session. The demo user has no
      * credentials record, and SecurityConfig keeps its session read-only. */
     @Transactional
     public AuthResponseDTO loginAsDemo() {

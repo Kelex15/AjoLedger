@@ -86,7 +86,7 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_WEBHOOK_ENDPOINTS).permitAll()
                         .requestMatchers(ERROR_DISPATCH_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_HEALTH_ENDPOINTS).permitAll()
-                        // A demo session can read everything and change nothing (ADR 0013). Relies on GETs never mutating.
+                        // A demo session can read everything and change nothing. Relies on GETs never mutating.
                         .requestMatchers(HttpMethod.GET, "/**").authenticated()
                         .requestMatchers(DEMO_ALLOWED_WRITE_ENDPOINTS).authenticated()
                         .anyRequest().access(AuthorizationManagers.allOf(

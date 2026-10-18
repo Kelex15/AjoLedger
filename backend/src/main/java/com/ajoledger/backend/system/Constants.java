@@ -21,7 +21,7 @@ public final class Constants {
         private Demo() {
         }
 
-        /** The shared read-only demo account (ADR 0013). The seeder claims it on first boot, and the unique
+        /** The shared read-only demo account. The seeder claims it on first boot, and the unique
          * constraint on username keeps anyone else from registering it afterwards. */
         public static final String USERNAME = "demo";
     }
