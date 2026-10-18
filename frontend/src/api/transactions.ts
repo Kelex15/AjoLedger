@@ -24,6 +24,10 @@ export interface LedgerActivity {
   currency: string
   description: string
   transactionType: string
+  /** The circle on the other side of this entry, if it touched one. */
+  circleName: string | null
+  /** Only set on payout entries. */
+  roundNumber: number | null
   createdAt: string
 }
 

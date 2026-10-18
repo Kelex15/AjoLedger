@@ -17,6 +17,8 @@ public record LedgerActivityResponseDTO(
     Currency currency,
     String description,
     String transactionType,
+    String circleName,
+    Integer roundNumber,
     Instant createdAt
 ) {
 
@@ -30,6 +32,8 @@ public record LedgerActivityResponseDTO(
                 activity.currency(),
                 activity.description(),
                 activity.transactionType().name(),
+                activity.circleName(),
+                activity.roundNumber(),
                 activity.createdAt());
     }
 }
