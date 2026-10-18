@@ -85,7 +85,7 @@ This applies to any active membership in a locked circle, paid out or not. The u
 ```mermaid
 flowchart TD
     D["Member defaults after payout<br/>group loss = contribution × rounds remaining"] --> S1
-    S1["1 · Seize their LIEN<br/>capped at the group loss, and at a<br/>persisted per-membership ceiling"] --> S2
+    S1["1 · Seize their own accounts<br/>LIEN, then SAVINGS, then CHECKING<br/>capped at the group loss, and at one<br/>persisted per-membership ceiling"] --> S2
     S2["2 · Draw from SYSTEM_BUFFER<br/>capped at 30% of the buffer's<br/>own current balance"] --> S3
     S3["3 · Whatever's left spreads across<br/>the circle's remaining rounds"]
     S1 -.recovered.-> R["Circle RESERVE"]
@@ -99,7 +99,9 @@ Two parts of this are worth calling out.
 
 **Recovered money goes to the circle's `RESERVE`, not the pot.** The waterfall seizes a buyout of the defaulter's whole remaining obligation, not one round's shortfall, so paying it straight into the pot would hand a windfall to whoever's payout came next. The reserve releases in even shares across the rounds that are left. Each release recalculates from the reserve's live balance and the rounds still ahead, so a second default folds into the same schedule, and the last round empties the reserve exactly.
 
-Step 1 also has a ceiling. Every locked membership carries a persisted `remainingCeiling`, checked and decremented at the seizure itself, with a `CHECK (remaining_ceiling >= 0)` constraint behind it. The seizure and the decrement share a transaction. A bug in the group-loss calculation can under-seize, but it can't take more than was ever owed.
+Step 1 takes `LIEN` first, since that's the collateral posted against exactly this loss. Order matters here because a `DEFAULTED` membership is no longer active, so its withdrawal floor drops to zero. If `SAVINGS` went first, any collateral left over would be withdrawable the moment the default posted, while the member's ordinary funds had already been taken in its place.
+
+Step 1 also has a ceiling. Every locked membership carries a persisted `remainingCeiling`, a single budget across all three accounts, checked and decremented once by the total seized, with a `CHECK (remaining_ceiling >= 0)` constraint behind it. The seizure and the decrement share a transaction. A bug in the group-loss calculation can under-seize, but it can't take more than was ever owed.
 
 ### Leaving before being paid
 
@@ -115,17 +117,18 @@ A chargeback gives no warning. The cardholder's bank pulls the money the moment 
 
 So on `charge.dispute.created` the member's accounts freeze. `SAVINGS` and `LIEN` sweep into `CHECKING` and all three lock, whatever the dispute's eventual outcome. Circulating a contribution funded by clawed-back money makes no sense, so a frozen member can't fund their next round, and the existing missed-contribution handling takes it from there.
 
-The platform doesn't absorb the loss. It's a risk the model already prices at the circle level, so it recovers through the same order as any default, just seizing the whole frozen balance instead of only `LIEN`.
+The platform doesn't absorb the loss. It's a risk the model already prices at the circle level, so it recovers through the same order as any default. The sweep has already consolidated everything into `CHECKING`, so step 1 seizes the whole frozen balance from that one account.
 
 ## Worked example
 
 Chinedu has $150 in `LIEN` from previous circles. He joins a $100-per-round circle and his score gets him an early position without posting new cash, since his balance already covers the requirement.
 
-He defaults with 3 rounds left after his payout. Group loss is $300.
+He defaults with 3 rounds left after his payout, having already withdrawn the cash from it. Group loss is $300.
 
 | Step | Source | Covers |
 |---|---|---|
 | 1 | Chinedu's `LIEN` | $150 |
+| 1 | Chinedu's `SAVINGS` and `CHECKING` | $0, already emptied |
 | 2 | `SYSTEM_BUFFER` | $150 |
 | 3 | Remaining members | $0 |
 
