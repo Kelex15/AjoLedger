@@ -6,6 +6,7 @@ import { AuthLayout } from '../components/AuthLayout'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { FieldError } from '../components/FieldError'
 import { GoogleSignInButton } from '../components/GoogleSignInButton'
+import { PasswordInput } from '../components/PasswordInput'
 import { ResendVerificationButton } from '../components/ResendVerificationButton'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -90,10 +91,10 @@ export function LoginPage() {
 
             <div className="grid gap-1.5">
               <Label htmlFor="login-password">Password</Label>
-              <Input
+              <PasswordInput
                 id="login-password"
                 name="password"
-                type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 onInput={() => clearError('password')}
