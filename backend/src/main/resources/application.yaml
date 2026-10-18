@@ -2,7 +2,7 @@ spring:
   application:
     name: backend
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
+    active: ${SPRING_PROFILES_ACTIVE:}
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/ajoledger}
     username: ${DATABASE_USERNAME:ajoledger}
