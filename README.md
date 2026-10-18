@@ -317,7 +317,7 @@ Terraform in `terraform/` provisions the AWS side and is applied by hand. On eac
 
 Stripe and PayPal both run in sandbox mode. No live credentials exist in this project and none will.
 
-Real money movement means money transmission licensing, which is well beyond what a portfolio project can take on, and running real payments without it would breach the processor's terms. Sandbox still covers everything interesting on the engineering side: hosted checkout, webhook signature verification, at-least-once delivery handled idempotently, out-of-order events, and reconciliation for deliveries that never arrive.
+Real money movement means money transmission licensing, and running real payments without it would breach the processor's terms. Sandbox still covers everything interesting on the engineering side: hosted checkout, webhook signature verification, at-least-once delivery handled idempotently, out-of-order events, and reconciliation for deliveries that never arrive.
 
 ## Tradeoffs and gaps
 

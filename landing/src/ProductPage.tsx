@@ -197,7 +197,7 @@ export function ProductPage() {
                   No real money moves here
                 </h2>
                 <p className="text-sm leading-relaxed text-muted-foreground">
-                  AjoLedger is a portfolio project, not a licensed money transmitter. Deposits run against
+                  AjoLedger isn&rsquo;t licensed to move money. Deposits run against
                   Stripe and PayPal sandbox credentials, so balances are real inside the system but no funds
                   ever leave or enter a bank. That limit is deliberate and permanent. The circles, the
                   double-entry ledger and the risk model all work exactly as described; only the payment rails
