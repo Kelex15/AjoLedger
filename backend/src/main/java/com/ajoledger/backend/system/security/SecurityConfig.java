@@ -40,6 +40,7 @@ public class SecurityConfig {
             "/api/auth/login",
             "/api/auth/verify-email",
             "/api/auth/resend-verification",
+            "/api/auth/demo",
             "/api/auth/google",
             "/api/auth/refresh"
     };
@@ -62,6 +63,7 @@ public class SecurityConfig {
             "/api/auth/login",
             "/api/auth/verify-email",
             "/api/auth/resend-verification",
+            "/api/auth/demo",
             "/api/auth/google",
             "/api/funding/stripe/webhook",
             "/api/funding/paypal/webhook"

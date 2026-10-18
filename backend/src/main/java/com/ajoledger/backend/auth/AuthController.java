@@ -55,6 +55,11 @@ public class AuthController {
         return withAuthCookies(authService.login(dto));
     }
 
+    @PostMapping(path = "demo", version = "1")
+    public ResponseEntity<MessageResponseDTO> loginAsDemo() {
+        return withAuthCookies(authService.loginAsDemo());
+    }
+
     @PostMapping(path = "google", version = "1")
     public ResponseEntity<MessageResponseDTO> loginWithGoogle(@Valid @RequestBody GoogleLoginRequestDTO dto) {
         return withAuthCookies(authService.loginWithGoogle(dto));

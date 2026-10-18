@@ -1,10 +1,14 @@
 package com.ajoledger.backend.system.security;
 
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.web.servlet.client.ExchangeResult;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -19,6 +23,8 @@ import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
 
+// The unavailable-demo case has to run before any test creates the demo user in this shared container.
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureRestTestClient
 @Testcontainers
@@ -69,6 +75,29 @@ class DemoAccessIntegrationTest {
             request.cookie("access_token", accessToken);
         }
         return request.body(Map.of()).exchange();
+    }
+
+    @Test
+    @Order(1)
+    void demoLoginIsUnavailableBeforeTheDemoUserExists() {
+        restTestClient.post().uri("/api/auth/demo").exchange().expectStatus().isEqualTo(503);
+    }
+
+    @Test
+    void demoLoginIssuesASessionThatCanReadButNotWrite() {
+        demoToken();
+
+        ExchangeResult login = restTestClient.post().uri("/api/auth/demo")
+                .exchange()
+                .expectStatus().isOk()
+                .returnResult();
+        String accessToken = login.getResponseCookies().getFirst("access_token").getValue();
+
+        restTestClient.get().uri("/api/accounts/me")
+                .cookie("access_token", accessToken)
+                .exchange()
+                .expectStatus().isOk();
+        post("/api/ledger/transfer", accessToken).expectStatus().isForbidden();
     }
 
     @Test
