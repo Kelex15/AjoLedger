@@ -51,6 +51,8 @@ ajoledger:
     reconciliation-cron: ${RECONCILIATION_CRON:0 0 * * * *} # hourly
     reconciliation-lookback-hours: ${RECONCILIATION_LOOKBACK_HOURS:24}
     hash-chain-seal-cron: ${HASH_CHAIN_SEAL_CRON:0 * * * * *} # every minute
+    email-outbox-cron: ${EMAIL_OUTBOX_CRON:*/5 * * * * *} # every 5 seconds, a verification email shouldn't feel delayed
+    email-outbox-purge-cron: ${EMAIL_OUTBOX_PURGE_CRON:0 30 3 * * *} # daily at 3:30am server time
   stripe:
     api-key: ${STRIPE_API_KEY}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET}
@@ -63,3 +65,10 @@ ajoledger:
     environment: ${PAYPAL_ENVIRONMENT:SANDBOX}
     timeout-ms: ${PAYPAL_TIMEOUT_MS:15000}
     uncaptured-grace-minutes: ${PAYPAL_UNCAPTURED_GRACE_MINUTES:30} # must exceed how long a legitimate capture can take, or reconciliation invents mismatches
+  email:
+    provider: ${EMAIL_PROVIDER:console} # console or resend
+    from: ${EMAIL_FROM:AjoLedger <noreply@ajoledger.xyz>}
+    resend-api-key: ${RESEND_API_KEY:}
+    timeout-ms: ${EMAIL_TIMEOUT_MS:10000}
+    max-attempts: ${EMAIL_MAX_ATTEMPTS:8} # with 30s doubling backoff, gives up after about an hour, inside Resend's 24h idempotency window
+    retention-days: ${EMAIL_RETENTION_DAYS:30}

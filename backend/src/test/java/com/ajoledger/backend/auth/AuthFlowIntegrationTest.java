@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureRestTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -44,6 +45,8 @@ class AuthFlowIntegrationTest {
     private UserAuthRepository userAuthRepository;
     @Autowired
     private AuditLogRepository auditLogRepository;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private String uniqueEmail() {
         return "test-" + UUID.randomUUID() + "@example.com";
@@ -260,5 +263,86 @@ class AuthFlowIntegrationTest {
         verifyEmail(verificationTokenFor(email));
 
         signupExpecting(email, org.springframework.http.HttpStatus.CONFLICT);
+    }
+
+    private MessageResponseDTO resendVerification(String email) {
+        return restTestClient.post().uri("/api/auth/resend-verification")
+                .body(Map.of("email", email))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(MessageResponseDTO.class)
+                .returnResult()
+                .getResponseBody();
+    }
+
+    private int queuedEmailsTo(String email) {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM email_outbox WHERE recipient = ?", Integer.class, email);
+    }
+
+    /** Moves the token's issue time back past the resend cooldown. */
+    private void ageVerificationToken(String email) {
+        User user = userRepository.findByEmail(email).orElseThrow();
+        UserAuth userAuth = userAuthRepository.findByUserId(user.getId()).orElseThrow();
+        userAuth.setVerificationTokenExpiresAt(userAuth.getVerificationTokenExpiresAt().minus(Duration.ofMinutes(2)));
+        userAuthRepository.save(userAuth);
+    }
+
+    @Test
+    void signupQueuesVerificationEmailWithTheLink() {
+        String email = uniqueEmail();
+        signupExpecting(email, org.springframework.http.HttpStatus.CREATED);
+
+        String body = jdbcTemplate.queryForObject("SELECT body FROM email_outbox WHERE recipient = ?", String.class, email);
+        assertThat(body).contains("/verify-email?token=" + verificationTokenFor(email));
+    }
+
+    @Test
+    void resendVerificationReplacesTheTokenSoOnlyTheNewLinkWorks() {
+        String email = uniqueEmail();
+        signupExpecting(email, org.springframework.http.HttpStatus.CREATED);
+        String originalToken = verificationTokenFor(email);
+        ageVerificationToken(email);
+
+        resendVerification(email);
+
+        String newToken = verificationTokenFor(email);
+        assertThat(newToken).isNotEqualTo(originalToken);
+        assertThat(queuedEmailsTo(email)).isEqualTo(2);
+
+        restTestClient.post().uri("/api/auth/verify-email")
+                .body(Map.of("token", originalToken))
+                .exchange()
+                .expectStatus().is4xxClientError();
+        verifyEmail(newToken);
+    }
+
+    @Test
+    void resendVerificationWithinCooldownSendsNothing() {
+        String email = uniqueEmail();
+        signupExpecting(email, org.springframework.http.HttpStatus.CREATED);
+        String originalToken = verificationTokenFor(email);
+
+        resendVerification(email);
+
+        assertThat(verificationTokenFor(email)).isEqualTo(originalToken);
+        assertThat(queuedEmailsTo(email)).isEqualTo(1);
+    }
+
+    @Test
+    void resendVerificationAnswersTheSameForUnknownAndVerifiedEmails() {
+        String verifiedEmail = uniqueEmail();
+        signupExpecting(verifiedEmail, org.springframework.http.HttpStatus.CREATED);
+        verifyEmail(verificationTokenFor(verifiedEmail));
+        String unverifiedEmail = uniqueEmail();
+        signupExpecting(unverifiedEmail, org.springframework.http.HttpStatus.CREATED);
+        ageVerificationToken(unverifiedEmail);
+
+        String unknownResponse = resendVerification(uniqueEmail()).message();
+        String verifiedResponse = resendVerification(verifiedEmail).message();
+        String unverifiedResponse = resendVerification(unverifiedEmail).message();
+
+        assertThat(verifiedResponse).isEqualTo(unknownResponse).isEqualTo(unverifiedResponse);
+        assertThat(queuedEmailsTo(verifiedEmail)).isEqualTo(1);
+        assertThat(verificationTokenFor(verifiedEmail)).isNull();
     }
 }

@@ -19,6 +19,7 @@ import com.ajoledger.backend.auth.dto.GoogleLoginRequestDTO;
 import com.ajoledger.backend.auth.dto.LoginRequestDTO;
 import com.ajoledger.backend.auth.dto.MessageResponseDTO;
 import com.ajoledger.backend.auth.dto.RefreshRequestDTO;
+import com.ajoledger.backend.auth.dto.ResendVerificationRequestDTO;
 import com.ajoledger.backend.auth.dto.SignupRequestDTO;
 import com.ajoledger.backend.auth.dto.VerifyEmailRequestDTO;
 import com.ajoledger.backend.auth.exception.AccountLockedException;
@@ -37,6 +38,7 @@ public class AuthService {
 
     private static final String INVALID_CREDENTIALS_MESSAGE = "Invalid email or password";
     private static final long VERIFICATION_TOKEN_VALIDITY_HOURS = 24;
+    private static final Duration VERIFICATION_RESEND_COOLDOWN = Duration.ofMinutes(1);
 
     private final UserRepository userRepository;
     private final UserAuthRepository userAuthRepository;
@@ -83,22 +85,57 @@ public class AuthService {
                 .email(email)
                 .build());
 
-        String verificationToken = UUID.randomUUID().toString();
-        userAuthRepository.save(UserAuth.builder()
+        UserAuth userAuth = userAuthRepository.save(UserAuth.builder()
                 .user(user)
                 .passwordHash(passwordEncoder.encode(dto.password()))
                 .emailVerified(false)
-                .verificationToken(verificationToken)
-                .verificationTokenExpiresAt(Instant.now().plus(Duration.ofHours(VERIFICATION_TOKEN_VALIDITY_HOURS)))
                 .failedLoginAttempts(0)
                 .build());
-
-        String verificationLink = appProperties.frontend().baseUrl() + "/verify-email?token=" + verificationToken;
-        emailSender.sendVerificationEmail(email, verificationLink);
+        issueVerificationEmail(userAuth, email);
 
         audit(user, AuditEventType.SIGNUP, null);
 
         return new MessageResponseDTO("Account created. Check your email to verify your account before logging in.");
+    }
+
+    /** Answers the same way whether or not the email belongs to an account waiting on verification,
+     * so it can't be used to find out who has signed up. */
+    @Transactional
+    public MessageResponseDTO resendVerification(ResendVerificationRequestDTO dto) {
+        String email = dto.email().toLowerCase();
+
+        userRepository.findByEmail(email)
+                .flatMap(user -> userAuthRepository.findByUserId(user.getId()))
+                .filter(userAuth -> !userAuth.isEmailVerified() && !inResendCooldown(userAuth))
+                .ifPresent(userAuth -> {
+                    issueVerificationEmail(userAuth, email);
+                    audit(userAuth.getUser(), AuditEventType.VERIFICATION_RESENT, null);
+                });
+
+        return new MessageResponseDTO("If that account is waiting to be verified, a new link is on its way.");
+    }
+
+    /** A fresh token replaces the old one, so only the newest link works. */
+    private void issueVerificationEmail(UserAuth userAuth, String email) {
+        String token = UUID.randomUUID().toString();
+        Instant expiresAt = Instant.now().plus(Duration.ofHours(VERIFICATION_TOKEN_VALIDITY_HOURS));
+        userAuth.setVerificationToken(token);
+        userAuth.setVerificationTokenExpiresAt(expiresAt);
+        userAuthRepository.save(userAuth);
+
+        String verificationLink = appProperties.frontend().baseUrl() + "/verify-email?token=" + token;
+        emailSender.sendVerificationEmail(email, verificationLink, expiresAt);
+    }
+
+    /** Stops the endpoint being used to flood someone's inbox. The issue time isn't stored, but it's
+     * always one validity period before the expiry. */
+    private boolean inResendCooldown(UserAuth userAuth) {
+        Instant expiresAt = userAuth.getVerificationTokenExpiresAt();
+        if (expiresAt == null) {
+            return false;
+        }
+        Instant issuedAt = expiresAt.minus(Duration.ofHours(VERIFICATION_TOKEN_VALIDITY_HOURS));
+        return issuedAt.plus(VERIFICATION_RESEND_COOLDOWN).isAfter(Instant.now());
     }
 
     /** A signup that never got verified doesn't get to permanently squat on an email.

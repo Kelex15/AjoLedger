@@ -6,6 +6,7 @@ import { AuthLayout } from '../components/AuthLayout'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { FieldError } from '../components/FieldError'
 import { GoogleSignInButton } from '../components/GoogleSignInButton'
+import { ResendVerificationButton } from '../components/ResendVerificationButton'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -21,6 +22,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { errors, validate, clearError } = useFormErrors()
 
@@ -32,6 +34,7 @@ export function LoginPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    setUnverifiedEmail(null)
     if (!validate(event.currentTarget)) {
       return
     }
@@ -41,6 +44,10 @@ export function LoginPage() {
       navigate('/', { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+      // Login only returns 403 for a correct password on an account that hasn't verified its email.
+      if (err instanceof ApiError && err.status === 403) {
+        setUnverifiedEmail(email)
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -98,6 +105,7 @@ export function LoginPage() {
             </div>
 
             <ErrorMessage message={error} />
+            {unverifiedEmail && <ResendVerificationButton email={unverifiedEmail} />}
 
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? 'Logging in…' : 'Log in'}
