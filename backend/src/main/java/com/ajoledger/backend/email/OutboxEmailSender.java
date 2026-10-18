@@ -23,11 +23,20 @@ public class OutboxEmailSender implements EmailSender {
             If the link has expired, you can request a new one from the sign-in page. If you didn't sign up for AjoLedger, you can ignore this email.
             """.formatted(verificationLink);
         // Past the link's expiry the email is useless, so delivery stops trying.
-        emailOutboxDao.enqueue(toEmail, "Verify your AjoLedger email", body, linkExpiresAt);
+        enqueue(toEmail, "Verify your AjoLedger email", body, linkExpiresAt);
     }
 
     @Override
     public void sendDefaultNotificationEmail(String toEmail, String message) {
-        emailOutboxDao.enqueue(toEmail, "An update from AjoLedger", message, null);
+        enqueue(toEmail, "An update from AjoLedger", message, null);
+    }
+
+    /** .invalid is a reserved TLD that can never resolve, which is why the demo accounts use it. Sending
+     * there would only bounce and count against the sending domain's reputation. */
+    private void enqueue(String toEmail, String subject, String body, Instant expiresAt) {
+        if (toEmail.endsWith(".invalid")) {
+            return;
+        }
+        emailOutboxDao.enqueue(toEmail, subject, body, expiresAt);
     }
 }

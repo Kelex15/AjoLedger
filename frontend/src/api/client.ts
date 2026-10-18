@@ -18,6 +18,7 @@ const REFRESH_EXEMPT_PATHS = new Set([
   '/api/auth/login',
   '/api/auth/signup',
   '/api/auth/google',
+  '/api/auth/demo',
   '/api/auth/refresh',
   '/api/auth/logout',
   '/api/auth/verify-email',

@@ -72,6 +72,15 @@ class EmailOutboxIntegrationTest {
     }
 
     @Test
+    void addressesOnTheReservedInvalidDomainAreNeverQueued() {
+        emailSender.sendDefaultNotificationEmail("member@demo.ajoledger.invalid", "hello");
+        emailSender.sendVerificationEmail("demo@demo.ajoledger.invalid", "http://localhost/verify-email?token=x",
+                Instant.now().plus(Duration.ofHours(1)));
+
+        assertThat(rowCount()).isZero();
+    }
+
+    @Test
     void successfulSendMarksRowSent() {
         emailSender.sendDefaultNotificationEmail("member@example.com", "hello");
 

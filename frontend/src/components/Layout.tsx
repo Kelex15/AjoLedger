@@ -3,6 +3,7 @@ import { Landmark, LogOut, Menu, Moon, Sun, UserRound, Users, Wallet } from 'luc
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { useAuth } from '../auth/useAuth'
 import { useTheme } from '../theme/useTheme'
+import { DemoBanner } from './DemoBanner'
 import { Logo } from './Logo'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -129,6 +130,7 @@ export function Layout() {
 
       <main key={location.pathname} className="animate-in fade-in duration-300 md:pl-60">
         <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
+          <DemoBanner />
           <Outlet />
         </div>
       </main>

@@ -16,7 +16,7 @@ import { Separator } from '@/components/ui/separator'
 import { useFormErrors } from '../hooks/useFormErrors'
 
 export function LoginPage() {
-  const { user, login, loginWithGoogle } = useAuth()
+  const { user, login, loginWithGoogle, loginAsDemo } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -25,6 +25,8 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [demoError, setDemoError] = useState<string | null>(null)
+  const [isStartingDemo, setIsStartingDemo] = useState(false)
   const { errors, validate, clearError } = useFormErrors()
 
   if (user) {
@@ -61,6 +63,19 @@ export function LoginPage() {
       navigate('/', { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    }
+  }
+
+  async function handleTryDemo() {
+    setDemoError(null)
+    setIsStartingDemo(true)
+    try {
+      await loginAsDemo()
+      navigate('/', { replace: true })
+    } catch (err) {
+      setDemoError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setIsStartingDemo(false)
     }
   }
 
@@ -127,6 +142,17 @@ export function LoginPage() {
           </div>
 
           <GoogleSignInButton onCredential={handleGoogleCredential} />
+
+          <div className="mt-6 flex flex-col gap-2 rounded-lg border border-border p-4">
+            <p className="text-sm font-medium">Just want to look around?</p>
+            <p className="text-sm text-muted-foreground">
+              Explore a demo account with real circle history. No sign-up needed.
+            </p>
+            <Button type="button" variant="secondary" onClick={handleTryDemo} disabled={isStartingDemo}>
+              {isStartingDemo ? 'Opening the demo…' : 'Try the demo'}
+            </Button>
+            <ErrorMessage message={demoError} />
+          </div>
         </CardContent>
       </Card>
     </AuthLayout>

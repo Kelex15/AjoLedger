@@ -16,6 +16,22 @@ public final class Constants {
         public static final UUID SYSTEM_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     }
 
+    public static final class Demo {
+
+        private Demo() {
+        }
+
+        /** The shared read-only demo account. The seeder claims it on first boot, and the unique
+         * constraint on username keeps anyone else from registering it afterwards. */
+        public static final String USERNAME = "demo";
+
+        /** The demo user's name until its history is complete, so a half-finished seed is never reachable. */
+        public static final String SEEDING_USERNAME = "demo-seeding";
+
+        /** .invalid is reserved and can never resolve, so no email to a seeded account can be delivered. */
+        public static final String EMAIL_DOMAIN = "demo.ajoledger.invalid";
+    }
+
     public static final class Circle {
 
         private Circle() {

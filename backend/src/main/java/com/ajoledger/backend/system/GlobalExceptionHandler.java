@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import com.ajoledger.backend.account.exception.AccountNotFoundException;
 import com.ajoledger.backend.auth.dto.MessageResponseDTO;
 import com.ajoledger.backend.auth.exception.AccountLockedException;
+import com.ajoledger.backend.auth.exception.DemoUnavailableException;
 import com.ajoledger.backend.auth.exception.EmailNotVerifiedException;
 import com.ajoledger.backend.auth.exception.InvalidCredentialsException;
 import com.ajoledger.backend.auth.exception.InvalidOrExpiredTokenException;
@@ -55,6 +56,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(AccountLockedException.class)
     public ResponseEntity<MessageResponseDTO> handleAccountLocked(AccountLockedException e) {
         return ResponseEntity.status(HttpStatus.LOCKED).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(DemoUnavailableException.class)
+    public ResponseEntity<MessageResponseDTO> handleDemoUnavailable(DemoUnavailableException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(new MessageResponseDTO(e.getMessage()));
     }
 
     @ExceptionHandler(EmailNotVerifiedException.class)

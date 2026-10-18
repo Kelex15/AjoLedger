@@ -23,6 +23,7 @@ import com.ajoledger.backend.auth.dto.ResendVerificationRequestDTO;
 import com.ajoledger.backend.auth.dto.SignupRequestDTO;
 import com.ajoledger.backend.auth.dto.VerifyEmailRequestDTO;
 import com.ajoledger.backend.auth.exception.AccountLockedException;
+import com.ajoledger.backend.auth.exception.DemoUnavailableException;
 import com.ajoledger.backend.auth.exception.EmailNotVerifiedException;
 import com.ajoledger.backend.auth.exception.InvalidCredentialsException;
 import com.ajoledger.backend.auth.exception.InvalidOrExpiredTokenException;
@@ -30,6 +31,7 @@ import com.ajoledger.backend.auth.exception.RefreshTokenReuseDetectedException;
 import com.ajoledger.backend.auth.refreshtoken.RefreshTokenService;
 import com.ajoledger.backend.email.EmailSender;
 import com.ajoledger.backend.system.AppProperties;
+import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
 
@@ -260,6 +262,16 @@ public class AuthService {
 
         audit(user, AuditEventType.LOGIN_SUCCESS, "google");
         return issueTokens(user);
+    }
+
+    /** The one deliberate exception to verification gating every session. The demo user has no
+     * credentials record, and SecurityConfig keeps its session read-only. */
+    @Transactional
+    public AuthResponseDTO loginAsDemo() {
+        User demoUser = userRepository.findByUsername(Constants.Demo.USERNAME)
+                .orElseThrow(() -> new DemoUnavailableException("The demo isn't available right now"));
+        audit(demoUser, AuditEventType.LOGIN_SUCCESS, "demo");
+        return issueTokens(demoUser);
     }
 
     @Transactional(noRollbackFor = RefreshTokenReuseDetectedException.class)

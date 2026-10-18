@@ -23,6 +23,7 @@ import { AccountIcon } from '../components/AccountIcon'
 import { ActivityList, ActivitySkeleton } from '../components/ActivityList'
 import { CircleCard } from '../components/CircleCard'
 import { CircleDetailDialog } from '../components/CircleDetailDialog'
+import { DemoNote } from '../components/DemoNote'
 import { EmptyState } from '../components/EmptyState'
 import { PageHeader } from '../components/PageHeader'
 import { FundingDialog } from '../components/dashboard/FundingDialog'
@@ -172,6 +173,7 @@ function AccountList() {
 }
 
 function BalanceSummary() {
+  const { isDemo } = useAuth()
   const { data: accounts, isLoading } = useQuery({ queryKey: queryKeys.accounts, queryFn: fetchMyAccounts })
 
   const total = accounts?.reduce((sum, account) => sum + account.balance, 0) ?? 0
@@ -201,19 +203,22 @@ function BalanceSummary() {
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <FundingDialog mode="deposit">
-            <Button size="lg">
-              <ArrowDownLeft />
-              Deposit
-            </Button>
-          </FundingDialog>
-          <FundingDialog mode="withdraw">
-            <Button size="lg" variant="outline">
-              <ArrowUpRight />
-              Withdraw
-            </Button>
-          </FundingDialog>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <FundingDialog mode="deposit">
+              <Button size="lg" disabled={isDemo}>
+                <ArrowDownLeft />
+                Deposit
+              </Button>
+            </FundingDialog>
+            <FundingDialog mode="withdraw">
+              <Button size="lg" variant="outline" disabled={isDemo}>
+                <ArrowUpRight />
+                Withdraw
+              </Button>
+            </FundingDialog>
+          </div>
+          <DemoNote />
         </div>
       </CardContent>
     </Card>

@@ -4,8 +4,10 @@ import { Link, Navigate, useParams } from 'react-router'
 import { fetchLienStatus, fetchMyAccounts } from '../api/accounts'
 import { queryKeys } from '../api/queryKeys'
 import { fetchActivity } from '../api/transactions'
+import { useAuth } from '../auth/useAuth'
 import { AccountIcon } from '../components/AccountIcon'
 import { ActivityList, ActivitySkeleton } from '../components/ActivityList'
+import { DemoNote } from '../components/DemoNote'
 import { EmptyState } from '../components/EmptyState'
 import { LienDialog } from '../components/dashboard/LienDialog'
 import { TransferDialog } from '../components/dashboard/TransferDialog'
@@ -18,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 const PAGE_SIZE = 25
 
 export function AccountPage() {
+  const { isDemo } = useAuth()
   const { accountNumber = '' } = useParams()
   const { data: accounts, isLoading } = useQuery({ queryKey: queryKeys.accounts, queryFn: fetchMyAccounts })
   const account = accounts?.find((candidate) => candidate.accountNumber === accountNumber)
@@ -60,7 +63,7 @@ export function AccountPage() {
 
             {account && account.accountType !== 'LIEN' && (
               <TransferDialog fromAccount={account}>
-                <Button>
+                <Button disabled={isDemo}>
                   <ArrowLeftRight />
                   Transfer
                 </Button>
@@ -93,6 +96,7 @@ export function AccountPage() {
 }
 
 function LienRestriction() {
+  const { isDemo } = useAuth()
   const { data: lien, isLoading } = useQuery({ queryKey: queryKeys.lien, queryFn: fetchLienStatus })
 
   if (isLoading) {
@@ -130,10 +134,11 @@ function LienRestriction() {
         </div>
 
         <LienDialog withdrawable={lien.withdrawable} currency={lien.currency}>
-          <Button variant="outline" className="self-start">
+          <Button variant="outline" className="self-start" disabled={isDemo}>
             Manage lien
           </Button>
         </LienDialog>
+        <DemoNote />
       </CardContent>
     </Card>
   )
