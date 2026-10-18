@@ -340,3 +340,7 @@ Real money movement means money transmission licensing, which is well beyond wha
 
 - [`backend/docs/design/v3.md`](backend/docs/design/v3.md) is the current trust model in full, including open questions. `v1.md` and `v2.md` stay as the record of how it changed and why, never edited once superseded.
 - [`docs/adrs/`](docs/adrs/) holds the architecture decisions, with the alternatives I actually weighed.
+
+## License
+
+© 2026 Kelex15. All rights reserved. The source is public for viewing only; no permission is granted to use, copy, modify or distribute it.
