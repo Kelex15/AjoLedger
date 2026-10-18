@@ -58,3 +58,18 @@ resource "aws_secretsmanager_secret_version" "stripe_webhook_secret" {
     ignore_changes = [secret_string]
   }
 }
+
+# Same placeholder pattern as Stripe. Set the real key once via:
+#   aws secretsmanager put-secret-value --secret-id ajoledger/resend-api-key --secret-string "re_..."
+resource "aws_secretsmanager_secret" "resend_api_key" {
+  name = "${var.project_name}/resend-api-key"
+}
+
+resource "aws_secretsmanager_secret_version" "resend_api_key" {
+  secret_id     = aws_secretsmanager_secret.resend_api_key.id
+  secret_string = "REPLACE_ME"
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}

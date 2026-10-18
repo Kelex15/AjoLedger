@@ -6,6 +6,7 @@ import { signup } from '../api/auth'
 import { AuthLayout } from '../components/AuthLayout'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { FieldError } from '../components/FieldError'
+import { ResendVerificationButton } from '../components/ResendVerificationButton'
 import { useFormErrors } from '../hooks/useFormErrors'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -51,8 +52,12 @@ export function SignupPage() {
             <CardTitle className="text-xl">Check your email</CardTitle>
             <CardDescription>{successMessage}</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button asChild variant="outline" className="w-full">
+          <CardContent className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Nothing after a minute or two? Check your spam folder, or send it again.
+            </p>
+            <ResendVerificationButton email={email} />
+            <Button asChild variant="ghost" className="w-full">
               <Link to="/login">Back to log in</Link>
             </Button>
           </CardContent>
