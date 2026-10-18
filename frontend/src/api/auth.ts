@@ -19,6 +19,13 @@ export function login(email: string, password: string) {
   })
 }
 
+/** Matches the backend's reserved demo username. */
+export const DEMO_USERNAME = 'demo'
+
+export function loginAsDemo() {
+  return apiFetch<{ message: string }>('/api/auth/demo', { method: 'POST' })
+}
+
 export function loginWithGoogle(idToken: string) {
   return apiFetch<{ message: string }>('/api/auth/google', {
     method: 'POST',

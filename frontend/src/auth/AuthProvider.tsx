@@ -2,8 +2,10 @@ import { type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '../api/client'
 import {
+  DEMO_USERNAME,
   fetchCurrentUser,
   login as loginRequest,
+  loginAsDemo as loginAsDemoRequest,
   loginWithGoogle as loginWithGoogleRequest,
   logout as logoutRequest,
 } from '../api/auth'
@@ -38,6 +40,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.currentUser }),
   })
 
+  const loginAsDemoMutation = useMutation({
+    mutationFn: loginAsDemoRequest,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.currentUser }),
+  })
+
   const logoutMutation = useMutation({
     mutationFn: logoutRequest,
     onSuccess: () => queryClient.setQueryData(queryKeys.currentUser, null),
@@ -46,11 +53,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextValue = {
     user,
     isLoading,
+    isDemo: user?.username === DEMO_USERNAME,
     login: async (email, password) => {
       await loginMutation.mutateAsync({ email, password })
     },
     loginWithGoogle: async (idToken) => {
       await loginWithGoogleMutation.mutateAsync(idToken)
+    },
+    loginAsDemo: async () => {
+      await loginAsDemoMutation.mutateAsync()
     },
     logout: async () => {
       await logoutMutation.mutateAsync()
