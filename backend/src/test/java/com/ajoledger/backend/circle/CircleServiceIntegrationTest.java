@@ -32,6 +32,8 @@ import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
+import com.ajoledger.backend.ledger.LedgerService;
+import com.ajoledger.backend.ledger.PayoutSplit;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.ledger.exception.LienWithdrawalBlockedException;
@@ -71,6 +73,8 @@ class CircleServiceIntegrationTest {
     private UserAccountRepository userAccountRepository;
     @Autowired
     private FundingService fundingService;
+    @Autowired
+    private LedgerService ledgerService;
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -170,6 +174,24 @@ class CircleServiceIntegrationTest {
                     "SELECT COUNT(*) FROM ledger_entry WHERE transaction_id = ?", Integer.class, transactionId);
             assertThat(legCount).isEqualTo(2);
         }
+    }
+
+    @Test
+    void payoutAmountCountsTheReserveSkimButNotTheBufferFee() {
+        User creator = createFundedUser(exactJoinAmount(new BigDecimal("100.00")));
+        User member2 = createFundedUser(exactJoinAmount(new BigDecimal("100.00")));
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(member2.getId(), circle.getId());
+
+        UUID operationId = jdbcTemplate.queryForObject(
+                "SELECT operation_id FROM circle_payout WHERE circle_id = ? AND recipient_user_id = ?",
+                UUID.class, circle.getId(), creator.getId());
+        PayoutSplit split = ledgerService.findPayoutSplits(List.of(operationId)).get(operationId);
+
+        // A $200 pot less the 2% buffer fee. This position's skim is non-zero, as the test above shows.
+        assertThat(split.reserve()).isPositive();
+        assertThat(split.total()).isEqualByComparingTo(new BigDecimal("196.00"));
     }
 
     @Test

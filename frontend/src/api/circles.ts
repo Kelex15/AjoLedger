@@ -66,7 +66,10 @@ export interface CirclePayout {
   roundNumber: number
   recipientUserId: string
   recipientUsername: string
+  /** What the recipient owns from this payout: savingsAmount plus reserveAmount. */
   amount: number | null
+  savingsAmount: number | null
+  reserveAmount: number | null
   currency: string
   paidAt: string
 }

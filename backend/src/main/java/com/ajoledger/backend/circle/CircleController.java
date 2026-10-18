@@ -10,6 +10,7 @@ import com.ajoledger.backend.circle.dto.CircleMembershipResponseDTO;
 import com.ajoledger.backend.circle.dto.CirclePayoutResponseDTO;
 import com.ajoledger.backend.circle.dto.CircleResponseDTO;
 import com.ajoledger.backend.ledger.LedgerService;
+import com.ajoledger.backend.ledger.PayoutSplit;
 
 import jakarta.validation.Valid;
 
@@ -75,11 +76,11 @@ public class CircleController {
     public ResponseEntity<List<CirclePayoutResponseDTO>> payouts(@PathVariable UUID circleId) {
         Currency currency = circleService.getCircleCurrency(circleId);
         List<CirclePayout> payouts = circleService.getPayouts(circleId);
-        Map<UUID, BigDecimal> amounts = ledgerService.findPayoutAmounts(
+        Map<UUID, PayoutSplit> splits = ledgerService.findPayoutSplits(
                 payouts.stream().map(CirclePayout::getOperationId).filter(Objects::nonNull).toList());
         return ResponseEntity.ok(payouts.stream()
                 .map(payout -> CirclePayoutResponseDTO.of(payout, currency,
-                        payout.getOperationId() == null ? null : amounts.get(payout.getOperationId())))
+                        payout.getOperationId() == null ? null : splits.get(payout.getOperationId())))
                 .toList());
     }
 

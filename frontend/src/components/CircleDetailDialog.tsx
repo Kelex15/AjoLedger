@@ -143,9 +143,17 @@ function CircleDetail({ circleId }: { circleId: string }) {
                     Round {payout.roundNumber} · {formatDateTime(payout.paidAt)}
                   </p>
                 </div>
-                <span data-numeric className="shrink-0 text-sm font-medium text-success">
-                  {payout.amount == null ? 'Pending' : formatMoney(payout.amount, payout.currency)}
-                </span>
+                <div className="flex shrink-0 flex-col items-end">
+                  <span data-numeric className="text-sm font-medium text-success">
+                    {payout.amount == null ? 'Pending' : formatMoney(payout.amount, payout.currency)}
+                  </span>
+                  {payout.savingsAmount != null && payout.reserveAmount != null && payout.reserveAmount > 0 && (
+                    <span data-numeric className="text-xs text-muted-foreground">
+                      {formatMoney(payout.savingsAmount, payout.currency)} to savings ·{' '}
+                      {formatMoney(payout.reserveAmount, payout.currency)} held in lien
+                    </span>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
