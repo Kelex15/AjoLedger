@@ -6,8 +6,11 @@ import { signup } from '../api/auth'
 import { AuthLayout } from '../components/AuthLayout'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { FieldError } from '../components/FieldError'
+import { PasswordInput } from '../components/PasswordInput'
+import { PasswordStrength } from '../components/PasswordStrength'
 import { ResendVerificationButton } from '../components/ResendVerificationButton'
 import { useFormErrors } from '../hooks/useFormErrors'
+import { usePasswordStrength } from '../hooks/usePasswordStrength'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -23,11 +26,12 @@ export function SignupPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const { errors, validate, clearError } = useFormErrors()
+  const passwordStrength = usePasswordStrength(password)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-    if (!validate(event.currentTarget)) {
+    if (!validate(event.currentTarget, { password: passwordStrength.error })) {
       return
     }
     setIsSubmitting(true)
@@ -140,17 +144,19 @@ export function SignupPage() {
 
             <div className="grid gap-1.5">
               <Label htmlFor="signup-password">Password</Label>
-              <Input
+              <PasswordInput
                 id="signup-password"
                 name="password"
-                type="password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 onInput={() => clearError('password')}
                 aria-invalid={Boolean(errors.password)}
+                aria-describedby="signup-password-strength"
                 data-required-message="Choose a password."
                 required
               />
+              <PasswordStrength id="signup-password-strength" password={password} strength={passwordStrength} />
               <FieldError message={errors.password} />
             </div>
 
