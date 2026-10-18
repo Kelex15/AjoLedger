@@ -55,22 +55,29 @@ public class LedgerTransactionDao {
         return jdbcTemplate.query(sql, ROW_MAPPER, id).stream().findFirst();
     }
 
-    /** The net amount credited to the recipient, which is the PAYOUT leg only: the buffer fee and
-     * lien skim are separate transactions under the same operation. */
-    public Map<UUID, BigDecimal> findPayoutAmounts(List<UUID> operationIds) {
+    /** The lien skim is part of what the recipient got, so it's counted alongside the PAYOUT leg.
+     * The buffer fee is the only part that left them. */
+    public Map<UUID, PayoutSplit> findPayoutSplits(List<UUID> operationIds) {
         List<UUID> distinctIds = operationIds.stream().distinct().toList();
         if (distinctIds.isEmpty()) {
             return Map.of();
         }
         String placeholders = distinctIds.stream().map(id -> "?").collect(Collectors.joining(","));
-        String sql = "SELECT operation_id, amount FROM transaction " +
-                "WHERE transaction_type = 'PAYOUT' AND operation_id IN (" + placeholders + ")";
+        String sql = """
+            SELECT operation_id,
+                   coalesce(sum(amount) FILTER (WHERE transaction_type = 'PAYOUT'), 0) AS savings,
+                   coalesce(sum(amount) FILTER (WHERE transaction_type = 'PAYOUT_LIEN_SKIM'), 0) AS reserve
+            FROM transaction
+            WHERE transaction_type IN ('PAYOUT', 'PAYOUT_LIEN_SKIM') AND operation_id IN (%s)
+            GROUP BY operation_id
+            """.formatted(placeholders);
 
-        Map<UUID, BigDecimal> amountsByOperationId = new LinkedHashMap<>();
+        Map<UUID, PayoutSplit> splitsByOperationId = new LinkedHashMap<>();
         jdbcTemplate.query(sql, rs -> {
-            amountsByOperationId.put(UUID.fromString(rs.getString("operation_id")), rs.getBigDecimal("amount"));
+            splitsByOperationId.put(UUID.fromString(rs.getString("operation_id")),
+                    new PayoutSplit(rs.getBigDecimal("savings"), rs.getBigDecimal("reserve")));
         }, distinctIds.toArray());
-        return amountsByOperationId;
+        return splitsByOperationId;
     }
 
     private static final RowMapper<LedgerActivity> ACTIVITY_ROW_MAPPER = (rs, rowNum) -> new LedgerActivity(

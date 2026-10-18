@@ -89,8 +89,8 @@ public class LedgerService {
         return ledgerDao.findLegsByTransactionId(transactionId);
     }
 
-    public Map<UUID, BigDecimal> findPayoutAmounts(List<UUID> operationIds) {
-        return ledgerTransactionDao.findPayoutAmounts(operationIds);
+    public Map<UUID, PayoutSplit> findPayoutSplits(List<UUID> operationIds) {
+        return ledgerTransactionDao.findPayoutSplits(operationIds);
     }
 
     public List<LedgerActivity> findActivityForUser(UUID userId, String accountNumber,
