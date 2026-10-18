@@ -23,6 +23,8 @@ import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 // The unavailable-demo case has to run before any test creates the demo user in this shared container.
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -132,5 +134,24 @@ class DemoAccessIntegrationTest {
     @Test
     void anonymousWriteIsStillUnauthorizedRatherThanForbidden() {
         post("/api/ledger/transfer", null).expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void blockedDemoWriteExplainsWhy() {
+        post("/api/ledger/transfer", demoToken())
+                .expectStatus().isForbidden()
+                .expectBody().jsonPath("$.message").value(message -> assertThat((String) message).contains("demo"));
+    }
+
+    @Test
+    void regularUserCsrfFailureIsNotBlamedOnTheDemo() {
+        String token = accessTokenFor("user" + UUID.randomUUID().toString().substring(0, 8));
+        byte[] body = restTestClient.post().uri("/api/ledger/transfer")
+                .cookie("access_token", token)
+                .body(Map.of())
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectBody().returnResult().getResponseBody();
+        assertThat(body == null ? "" : new String(body)).doesNotContain("demo");
     }
 }
