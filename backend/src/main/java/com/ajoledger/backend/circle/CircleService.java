@@ -245,7 +245,7 @@ public class CircleService {
 
     /** Live preview: recomputed fresh each call against whoever's currently active, so it shifts
      * both pre-lock (as members join) and post-lock (as reputation keeps evolving after the real
-     * position froze) — can diverge from the membership's own stored position either way. */
+     * position froze), so it can diverge from the membership's own stored position either way. */
     public List<CircleMemberStanding> getMemberStandings(UUID circleId) {
         Circle circle = circleRepository.findById(circleId)
                 .orElseThrow(() -> new CircleNotFoundException("Circle not found: " + circleId));

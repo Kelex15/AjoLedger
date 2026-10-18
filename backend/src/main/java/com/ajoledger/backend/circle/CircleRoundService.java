@@ -206,8 +206,8 @@ public class CircleRoundService {
             User recipient = recipientMembership.getUser();
             releaseReserveShare(circle);
             CircleAccount pot = circleAccountRepository.requireByCircleIdAndType(circleId, CircleAccountType.POT);
-            // Pay out what the pot actually holds, not calculatePotSize's theoretical figure —
-            // a reserve release (above) can top it up beyond that on a round following a default.
+            // Pay out what the pot actually holds, not calculatePotSize's theoretical figure,
+            // since a reserve release (above) can top it up beyond that on a round following a default.
             BigDecimal grossAmount = ledgerDao.getBalance(pot.getId());
 
             CirclePayout payout = circlePayoutRepository.save(CirclePayout.builder()
