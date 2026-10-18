@@ -3,6 +3,7 @@ package com.ajoledger.backend.scheduler;
 import com.ajoledger.backend.funding.paypal.PayPalReconciliationService;
 import com.ajoledger.backend.funding.stripe.ReconciliationService;
 import com.ajoledger.backend.system.AppProperties;
+import com.ajoledger.backend.system.SchedulingConfig;
 
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -23,7 +24,7 @@ public class ReconciliationScheduler {
     private final PayPalReconciliationService payPalReconciliationService;
     private final AppProperties appProperties;
 
-    @Scheduled(cron = "${ajoledger.scheduler.reconciliation-cron}")
+    @Scheduled(cron = "${ajoledger.scheduler.reconciliation-cron}", scheduler = SchedulingConfig.RECONCILIATION_TASK_SCHEDULER)
     public void runReconciliation() {
         Instant since = Instant.now().minus(Duration.ofHours(appProperties.scheduler().reconciliationLookbackHours()));
         try {
