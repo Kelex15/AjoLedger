@@ -2,6 +2,7 @@ package com.ajoledger.backend.scheduler;
 
 import com.ajoledger.backend.email.EmailDeliveryService;
 import com.ajoledger.backend.system.AppProperties;
+import com.ajoledger.backend.system.SchedulingConfig;
 
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -21,7 +22,7 @@ public class EmailOutboxScheduler {
     private final EmailDeliveryService emailDeliveryService;
     private final AppProperties appProperties;
 
-    @Scheduled(cron = "${ajoledger.scheduler.email-outbox-cron}")
+    @Scheduled(cron = "${ajoledger.scheduler.email-outbox-cron}", scheduler = SchedulingConfig.EMAIL_TASK_SCHEDULER)
     public void deliverDueEmails() {
         try {
             int sent = emailDeliveryService.deliverDue();
@@ -34,7 +35,7 @@ public class EmailOutboxScheduler {
     }
 
     /** Sent and failed rows can carry a live verification link, so they don't stay around indefinitely. */
-    @Scheduled(cron = "${ajoledger.scheduler.email-outbox-purge-cron}")
+    @Scheduled(cron = "${ajoledger.scheduler.email-outbox-purge-cron}", scheduler = SchedulingConfig.EMAIL_TASK_SCHEDULER)
     public void purgeFinishedEmails() {
         Instant cutoff = Instant.now().minus(Duration.ofDays(appProperties.email().retentionDays()));
         try {
