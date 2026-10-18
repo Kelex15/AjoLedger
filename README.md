@@ -4,7 +4,14 @@ A platform for rotating savings groups. These are known as Ajo or Esusu in Niger
 
 I built this solo to work on two things: a double-entry ledger that holds up under concurrent writes, and a trust model that replaces the social pressure these groups normally run on. The banking layer underneath is intentionally thin. It's there so the circle logic has something correct to sit on.
 
-Stripe runs in sandbox mode only. No real money moves, and [here's why](#payments-are-sandbox-only).
+It's live at [app.ajoledger.xyz](https://app.ajoledger.xyz). "Try the demo" on the login page opens a shared read-only account with circles already played out, so you can look around without signing up. There's a [product overview](https://ajoledger.xyz/) and an [engineering write-up](https://ajoledger.xyz/engineering) too.
+
+Stripe and PayPal both run in sandbox mode only. No real money moves, and [here's why](#payments-are-sandbox-only).
+
+The two parts worth reading closely:
+
+- **[The trust model](#the-trust-model).** Reputation decides payout order, and real money held in each member's `LIEN` backs it, so a default gets covered without billing anyone else in the group.
+- **[The ledger](#the-ledger).** Double-entry in hand-written SQL, with row locks against concurrent double-spends and Postgres triggers that refuse unbalanced or edited entries.
 
 ## The problem
 
@@ -145,7 +152,8 @@ flowchart TB
     end
 
     subgraph vercel["Vercel"]
-        FE["Static frontend<br/>ajoledger.xyz"]
+        FE["App<br/>app.ajoledger.xyz"]
+        LANDING["Landing site<br/>ajoledger.xyz"]
     end
 
     subgraph aws["AWS"]
@@ -156,17 +164,25 @@ flowchart TB
         end
         RDS[("RDS PostgreSQL")]
         ECR["ECR"]
+        SM["Secrets Manager"]
         API --> RDS
+        ec2 -.reads at deploy.-> SM
     end
 
     STRIPE["Stripe (sandbox)"]
+    PAYPAL["PayPal (sandbox)"]
+    RESEND["Resend"]
 
     UI --> FE
+    UI --> LANDING
     UI -->|"cookie auth, X-API-Version"| CADDY
     API -->|"checkout session"| STRIPE
+    API -->|"create, capture, look up orders"| PAYPAL
     STRIPE -->|"signed webhooks"| CADDY
+    PAYPAL -->|"webhooks"| CADDY
+    API -->|"outbox delivery"| RESEND
     GHA["GitHub Actions"] -->|"OIDC, no static keys"| ECR
-    GHA -->|"deploy"| ec2
+    GHA -->|"deploy via SSM"| ec2
 ```
 
 The backend is a modular monolith packaged by feature, not by layer. Each folder holds its own entity, controller, service, repository and DTOs.
@@ -179,9 +195,10 @@ com.ajoledger.backend/
 ├── account/     account types and balances
 ├── ledger/      the ledger core and the hash chain
 ├── circle/      circles, memberships, rounds, trust calculations, waterfall
-├── funding/     Stripe deposits, webhooks, reconciliation
-├── scheduler/   round and enrollment transitions
-├── email/       verification and notifications
+├── funding/     Stripe and PayPal deposits, webhooks, reconciliation
+├── scheduler/   round, enrollment and email outbox jobs
+├── email/       the outbox and its Resend and console transports
+├── demo/        seeds the read-only demo account through the real flows
 └── devtools/    dev-only transition forcing, never on in production
 ```
 
@@ -219,39 +236,45 @@ END IF;
 
 The books balancing isn't something the application has to get right. Postgres refuses the write. Other triggers reject UPDATE and DELETE on the ledger tables entirely, so corrections go through new offsetting entries.
 
+### How it's tested
+
+`LedgerIntegrationTest` releases two transfers of the same full balance from one account at the same moment, held behind a latch, and asserts that exactly one succeeds. `LedgerPropertyTest` uses jqwik to generate random transfer sequences against real Postgres and checks that debits always equal credits, no balance goes negative, an idempotent replay never changes a balance, and the waterfall never seizes past a membership's ceiling.
+
 ### Idempotency
 
 Every money-moving write carries an idempotency key, so a retry replays the original result instead of processing twice.
 
 Webhooks needed something different. A webhook's identity is Stripe's event id, not a key the caller chose, and a redelivery isn't a conflicting request, it's the same event arriving again. [ADR 0009](docs/adrs/0009-webhook-idempotency-and-reconciliation.md) has that, plus the hourly reconciliation job that catches payments Stripe thinks succeeded but which never reached the ledger.
 
+PayPal is harder, because my server calls capture itself, so both the webhook and the browser return path move money. [ADR 0011](docs/adrs/0011-paypal-orders-integration.md) covers how capture stays single-shot and how orders reconcile without a list API.
+
 ### Tamper-evident history
 
 Append-only triggers stop ordinary UPDATE and DELETE, but they don't prove nobody bypassed them. So every ledger row gets hashed into an append-only chain: table name, position, previous hash, and the row's own content. Verification walks the chain, refetches each row's current content, recomputes the hash and compares. A mismatch means the row changed after sealing. A broken link means one was removed or reordered.
 
-This started as a synchronous trigger hashing on every INSERT, which capped ledger throughput at roughly 500 to 1,200 tps no matter the concurrency, because every insert across all three tables serialized on one lock. Moving it to a scheduled batch job removed that cost. The trade is that tamper evidence now lags by the sealing interval. [ADR 0010](docs/adrs/0010-ledger-hash-chain-audit-trail.md) has the alternatives and the limitation, which is that this proves self-consistency, not immunity from someone with migration rights who could change a row and its hash together.
+This started as a synchronous trigger hashing on every INSERT, which capped ledger throughput at roughly 500 to 1,200 tps no matter the concurrency, because every insert across all three tables serialized on one lock. Moving it to a scheduled batch job removed that cost. The trade is that tamper evidence now lags by the sealing interval. [ADR 0010](docs/adrs/0010-ledger-hash-chain-audit-trail.md) has the alternatives.
+
+The chain proves the ledger is consistent with itself, and that's all. The rows and their hashes live in the same database under the same authority, so anyone who can disable the triggers can rewrite a row and recompute every hash after it, and verification will pass. Closing that gap takes external anchoring: periodically publishing the chain's tip hash somewhere this system's own deploy rights can't reach, so rewritten history no longer matches a tip that was already witnessed. That part isn't built yet.
+
+## Supporting features
+
+**API.** Versioned by an `X-API-Version` header, so a resource keeps one URL across versions. Money is `BigDecimal` everywhere, and entities are never serialized directly. [ADR 0001](docs/adrs/0001-api-versioning-strategy.md).
+
+**Auth.** Tokens live in httpOnly cookies and refresh tokens rotate on every use. Presenting an already-rotated one revokes the whole login. Google sign-in only links to an existing account, and only when Google asserts the email is verified. [ADR 0006](docs/adrs/0006-auth-identity-security-model.md).
+
+**Email.** Queued in an outbox table inside the transaction that triggers it, then sent through Resend by a background job, so a provider outage can't roll back money that already moved. [ADR 0012](docs/adrs/0012-transactional-email-outbox.md).
+
+**Demo account.** One shared account whose session the server limits to `GET` requests. Its history comes from running the real circle flows at startup, not from inserted rows. [ADR 0013](docs/adrs/0013-read-only-demo-account.md).
 
 ## Stack
 
-**Backend.** Java 21, Spring Boot 4.1, Spring Security, Spring Web MVC. JPA for state, `JdbcTemplate` for the ledger. PostgreSQL 16 with Flyway. JJWT, zxcvbn for password strength, Google API client, stripe-java.
+**Backend.** Java 21, Spring Boot 4.1, Spring Security, Spring Web MVC. JPA for state, `JdbcTemplate` for the ledger. PostgreSQL 16 with Flyway. JJWT, zxcvbn for password strength, Google API client, stripe-java, PayPal's server SDK, Resend for email.
 
-**Frontend.** React 19 with the React Compiler, Vite, TypeScript, TanStack Query, React Router, Tailwind v4, shadcn/ui.
+**Frontend.** React 19 with the React Compiler, Vite, TypeScript, TanStack Query, React Router, Tailwind v4, shadcn/ui. The landing site in `landing/` is a separate Vite app on the same stack.
 
 **Testing.** JUnit 5 with Testcontainers against real Postgres, plus jqwik property tests for ledger and waterfall invariants.
 
-**Infrastructure.** Docker, Terraform, GitHub Actions, AWS (EC2, ECR, RDS, IAM via OIDC), Caddy, Vercel.
-
-### API conventions
-
-The API version comes from an `X-API-Version` header, not a URL prefix, using Spring Framework 7's native support, with a default so clients that don't send it keep working. For something banking-shaped, where a URL identifies a resource, I didn't want the same user resource living at two addresses depending on the version asked for. [ADR 0001](docs/adrs/0001-api-versioning-strategy.md).
-
-Money is `BigDecimal` everywhere. Entities are never serialized directly. Paths are kebab-case, JSON camelCase, columns snake_case.
-
-### Auth
-
-Password signup is the only way to create an account. Google sign-in links to an existing account only, and it rejects the login outright if Google doesn't assert `email_verified`. An unverified email claim proves nothing, and matching on email alone is a known takeover vector.
-
-Access and refresh tokens live in httpOnly cookies. Refresh tokens rotate on every use, and presenting an already-rotated one revokes every token descended from that login and writes an audit entry, since that's an unambiguous compromise signal. Credentials sit on a separate entity from the profile, inside the auth module, so nothing security-sensitive can be serialized into a response by accident. [ADR 0006](docs/adrs/0006-auth-identity-security-model.md) has the full design and the parts I deferred.
+**Infrastructure.** Docker, Terraform, GitHub Actions, AWS (EC2, ECR, RDS, Secrets Manager, SSM, IAM via OIDC), Caddy, Vercel.
 
 ## Running it
 
@@ -267,11 +290,11 @@ Compose defaults to database, user and password `ajoledger` on port 5433, which 
 
 ```bash
 cd backend
-cp .env.example .env    # set JWT_SECRET and your Stripe test keys
+cp .env.example .env    # set JWT_SECRET plus your Stripe and PayPal sandbox keys
 ./mvnw spring-boot:run
 ```
 
-Runs on `http://localhost:8081`, and Flyway applies the migrations on first boot. `JWT_SECRET` and `STRIPE_API_KEY` have no defaults on purpose. A committed fallback secret is a real vulnerability, so the app won't start without them.
+Runs on `http://localhost:8081`, and Flyway applies the migrations on first boot. `JWT_SECRET`, `STRIPE_API_KEY` and the PayPal credentials have no defaults on purpose. A committed fallback secret is a real vulnerability, so the app won't start without them. Email goes to the console locally, so verification links show up in the backend logs.
 
 ```bash
 cd frontend
@@ -280,7 +303,7 @@ npm install
 npm run dev
 ```
 
-Runs on `http://localhost:3000`.
+Runs on `http://localhost:3000`. The landing site runs the same way from `landing/`, on port 3001, and needs no env file.
 
 ```bash
 cd backend && ./mvnw test
@@ -290,13 +313,11 @@ Testcontainers starts a real Postgres per run, so Docker has to be up. The integ
 
 ## Deployment
 
-Terraform in `terraform/` is applied by hand and is separate from the deploy pipeline. It provisions the EC2 instance, ECR repository, RDS, security groups, secrets, and the GitHub OIDC trust relationship.
-
-GitHub Actions builds the backend image for arm64, pushes to ECR and deploys over SSH. Caddy handles TLS and proxies to the container. AWS auth is OIDC, so there are no long-lived keys in the repo or in Actions secrets. The frontend deploys to Vercel from the same repo.
+Terraform in `terraform/` provisions the AWS side and is applied by hand. On each push to `main` that touches the backend, GitHub Actions runs the tests, builds an arm64 image tagged with the commit SHA, and redeploys over SSM. AWS auth is OIDC, so there's no SSH port open and no long-lived key anywhere. The instance health-checks the new container through Caddy and restores the previous image if the check fails. The app and the landing site deploy to Vercel.
 
 ### Payments are sandbox only
 
-Stripe runs in test mode. No live credentials exist in this project and none will.
+Stripe and PayPal both run in sandbox mode. No live credentials exist in this project and none will.
 
 Real money movement means money transmission licensing, which is well beyond what a portfolio project can take on, and running real payments without it would breach the processor's terms. Sandbox still covers everything interesting on the engineering side: hosted checkout, webhook signature verification, at-least-once delivery handled idempotently, out-of-order events, and reconciliation for deliveries that never arrive.
 
@@ -314,14 +335,17 @@ Real money movement means money transmission licensing, which is well beyond wha
 
 **No refunds.** A member who deposits the wrong amount withdraws instead. A reversal path means another way money flows backwards through the ledger, and withdrawal already covers it.
 
+**Withdrawals never leave the ledger.** Deposits come in through real sandbox rails, but withdrawals only move money between ledger accounts. Stripe has no payout path here either, and PayPal Payouts is its own API with separate onboarding, so both will get done together.
+
+**One backend instance is assumed.** Scheduled jobs, the email outbox included, rely on runs never overlapping, and the login lockout counter isn't safe to increment from several instances at once. Scaling out would need a claim step such as `FOR UPDATE SKIP LOCKED` for the jobs and a shared store for the counter.
+
 **2FA is deferred.** ADR 0006 records it as a gap, not an oversight.
 
-**Not built yet.** k6 load testing on the ledger write path, CloudWatch monitoring with a post-deploy smoke test, real transactional email.
+**Not built yet.** k6 load testing on the ledger write path, CloudWatch monitoring with a post-deploy smoke test, and a frontend test suite. Frontend CI is lint and build only for now.
 
 ## Docs
 
 - [`backend/docs/design/v3.md`](backend/docs/design/v3.md) is the current trust model in full, including open questions. `v1.md` and `v2.md` stay as the record of how it changed and why, never edited once superseded.
 - [`docs/adrs/`](docs/adrs/) holds the architecture decisions, with the alternatives I actually weighed.
-- [`backend/docs/HOW_IT_WORKS.md`](backend/docs/HOW_IT_WORKS.md) explains the complicated mechanisms in plain language: the ledger write path, refresh token rotation, the circle reserve, the hash chain.
 - [`backend/docs/CHALLENGES.md`](backend/docs/CHALLENGES.md) logs the bugs and rework honestly.
 - [`backend/docs/LEARNING.md`](backend/docs/LEARNING.md) tracks concepts worth going deeper on.
