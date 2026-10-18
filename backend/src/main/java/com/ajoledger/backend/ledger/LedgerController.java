@@ -11,6 +11,7 @@ import com.ajoledger.backend.ledger.dto.LedgerActivityPageResponseDTO;
 import com.ajoledger.backend.ledger.dto.LedgerActivityResponseDTO;
 import com.ajoledger.backend.ledger.dto.LedgerTransactionResponseDTO;
 import com.ajoledger.backend.ledger.dto.TransferRequestDTO;
+import com.ajoledger.backend.ledger.exception.MalformedCursorException;
 
 import jakarta.validation.Valid;
 
@@ -25,7 +26,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -78,7 +78,7 @@ public class LedgerController {
                 return new Cursor(Instant.parse(raw.substring(0, separator)),
                         UUID.fromString(raw.substring(separator + 1)));
             } catch (IndexOutOfBoundsException | DateTimeParseException | IllegalArgumentException e) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Malformed cursor");
+                throw new MalformedCursorException("Malformed cursor");
             }
         }
 
