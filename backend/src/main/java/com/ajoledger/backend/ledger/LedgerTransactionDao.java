@@ -89,6 +89,8 @@ public class LedgerTransactionDao {
             Currency.valueOf(rs.getString("currency")),
             rs.getString("description"),
             LedgerTransactionType.valueOf(rs.getString("transaction_type")),
+            rs.getString("circle_name"),
+            (Integer) rs.getObject("round_number"),
             rs.getTimestamp("created_at").toInstant()
     );
 
@@ -101,11 +103,22 @@ public class LedgerTransactionDao {
                t.currency,
                t.description,
                t.transaction_type,
+               circle_source.name AS circle_name,
+               cp.round_number,
                le.created_at
         FROM ledger_entry le
         JOIN user_account ua ON ua.id = le.account_id
         JOIN account a ON a.id = le.account_id
         JOIN transaction t ON t.id = le.transaction_id
+        LEFT JOIN LATERAL (
+            SELECT c.name
+            FROM ledger_entry other
+            JOIN circle_account ca ON ca.id = other.account_id
+            JOIN circle c ON c.id = ca.circle_id
+            WHERE other.transaction_id = t.id
+            LIMIT 1
+        ) circle_source ON true
+        LEFT JOIN circle_payout cp ON cp.operation_id = t.operation_id
         WHERE ua.user_id = ?
           AND ua.user_account_type IN ('CHECKING', 'SAVINGS', 'LIEN')
         """;

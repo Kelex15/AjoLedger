@@ -14,6 +14,7 @@ import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,7 +33,9 @@ import com.ajoledger.backend.circle.policy.CircleSizingPolicy;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
+import com.ajoledger.backend.ledger.LedgerActivity;
 import com.ajoledger.backend.ledger.LedgerService;
+import com.ajoledger.backend.ledger.LedgerTransactionType;
 import com.ajoledger.backend.ledger.PayoutSplit;
 import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.system.Constants;
@@ -192,6 +195,26 @@ class CircleServiceIntegrationTest {
         // A $200 pot less the 2% buffer fee. This position's skim is non-zero, as the test above shows.
         assertThat(split.reserve()).isPositive();
         assertThat(split.total()).isEqualByComparingTo(new BigDecimal("196.00"));
+    }
+
+    @Test
+    void activityNamesTheCircleEachEntryCameFrom() {
+        User creator = createFundedUser(exactJoinAmount(new BigDecimal("100.00")));
+        User member2 = createFundedUser(exactJoinAmount(new BigDecimal("100.00")));
+
+        Circle circle = circleService.createCircle(creator.getId(), createRequest(2, false));
+        circleService.joinCircle(member2.getId(), circle.getId());
+
+        Map<LedgerTransactionType, LedgerActivity> byType = new HashMap<>();
+        ledgerService.findActivityForUser(creator.getId(), null, null, null, 50)
+                .forEach(entry -> byType.putIfAbsent(entry.transactionType(), entry));
+
+        assertThat(byType.get(LedgerTransactionType.PAYOUT).circleName()).isEqualTo("Test Circle");
+        assertThat(byType.get(LedgerTransactionType.PAYOUT).roundNumber()).isEqualTo(1);
+        assertThat(byType.get(LedgerTransactionType.PAYOUT_LIEN_SKIM).roundNumber()).isEqualTo(1);
+        assertThat(byType.get(LedgerTransactionType.CONTRIBUTION).circleName()).isEqualTo("Test Circle");
+        assertThat(byType.get(LedgerTransactionType.CONTRIBUTION).roundNumber()).isNull();
+        assertThat(byType.get(LedgerTransactionType.DEPOSIT).circleName()).isNull();
     }
 
     @Test
