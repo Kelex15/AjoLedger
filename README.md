@@ -248,11 +248,11 @@ PayPal is harder, because my server calls capture itself, so both the webhook an
 
 ### Tamper-evident history
 
-Append-only triggers stop ordinary UPDATE and DELETE, but they don't prove nobody bypassed them. So every ledger row gets hashed into an append-only chain: table name, position, previous hash, and the row's own content. Verification walks the chain, refetches each row's current content, recomputes the hash and compares. A mismatch means the row changed after sealing. A broken link means one was removed or reordered.
+The append-only triggers stop ordinary UPDATE and DELETE, but they can't show that nobody went around them. So every ledger row also gets hashed into a chain, each link covering the row's content and the previous link's hash. Verification walks the chain and recomputes every hash from the rows as they stand now. An edited row no longer matches its hash. A deleted or reordered one breaks the chain.
 
-This started as a synchronous trigger hashing on every INSERT, which capped ledger throughput at roughly 500 to 1,200 tps no matter the concurrency, because every insert across all three tables serialized on one lock. Moving it to a scheduled batch job removed that cost. The trade is that tamper evidence now lags by the sealing interval. [ADR 0010](docs/adrs/0010-ledger-hash-chain-audit-trail.md) has the alternatives.
+The first version hashed in a trigger on every INSERT, which capped the ledger at roughly 500 to 1,200 tps regardless of concurrency, since every insert across all three tables waited on one lock. Sealing now runs as a job once a minute, off the write path entirely. The trade is that a new row stays unsealed until the next run. [ADR 0010](docs/adrs/0010-ledger-hash-chain-audit-trail.md) has the alternatives.
 
-The chain proves the ledger is consistent with itself, and that's all. The rows and their hashes live in the same database under the same authority, so anyone who can disable the triggers can rewrite a row and recompute every hash after it, and verification will pass. Closing that gap takes external anchoring: periodically publishing the chain's tip hash somewhere this system's own deploy rights can't reach, so rewritten history no longer matches a tip that was already witnessed. That part isn't built yet.
+The chain only proves the ledger agrees with itself. Rows and hashes live in the same database, so anyone who can disable the triggers can rewrite a row and recompute every hash after it. Closing that gap means publishing the latest hash somewhere outside the system, and that isn't built yet.
 
 ## Supporting features
 
@@ -327,7 +327,7 @@ Real money movement means money transmission licensing, which is well beyond wha
 
 **Constants are placeholders.** The reputation weight `w = 0.5`, the 3× default multiplier, the 30% skim cap, the 2% buffer fee and the 30% draw cap are plausible, not tuned.
 
-**Tamper evidence lags**, by design, per the throughput trade above.
+**New rows go unsealed for up to a minute.** That's the price of taking hashing off the write path. A row altered inside that window, with the triggers bypassed, would be sealed in its altered form and still verify.
 
 **One circle at a time.** Members can only hold one active membership. That closes a gaming path where someone accrues `LIEN` across many small circles and then exploits a large one, and it makes `LIEN` pooling safe to reason about. It's also a real product limitation.
 
@@ -336,14 +336,7 @@ Real money movement means money transmission licensing, which is well beyond wha
 **Withdrawals never leave the ledger.** Deposits come in through real sandbox rails, but withdrawals only move money between ledger accounts. Stripe has no payout path here either, and PayPal Payouts is its own API with separate onboarding, so both will get done together.
 
 **One backend instance is assumed.** Scheduled jobs, the email outbox included, rely on runs never overlapping, and the login lockout counter isn't safe to increment from several instances at once. Scaling out would need a claim step such as `FOR UPDATE SKIP LOCKED` for the jobs and a shared store for the counter.
-
-**2FA is deferred.** ADR 0006 records it as a gap, not an oversight.
-
-**Not built yet.** k6 load testing on the ledger write path, CloudWatch monitoring with a post-deploy smoke test, and a frontend test suite. Frontend CI is lint and build only for now.
-
 ## Docs
 
 - [`backend/docs/design/v3.md`](backend/docs/design/v3.md) is the current trust model in full, including open questions. `v1.md` and `v2.md` stay as the record of how it changed and why, never edited once superseded.
 - [`docs/adrs/`](docs/adrs/) holds the architecture decisions, with the alternatives I actually weighed.
-- [`backend/docs/CHALLENGES.md`](backend/docs/CHALLENGES.md) logs the bugs and rework honestly.
-- [`backend/docs/LEARNING.md`](backend/docs/LEARNING.md) tracks concepts worth going deeper on.
