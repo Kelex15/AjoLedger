@@ -1,4 +1,6 @@
-package com.ajoledger.backend.email;
+package com.ajoledger.backend.email.transport;
+
+import com.ajoledger.backend.email.OutboxEmail;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

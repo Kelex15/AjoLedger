@@ -28,7 +28,7 @@ import com.ajoledger.backend.circle.repository.CircleMembershipRepository;
 import com.ajoledger.backend.circle.repository.CirclePayoutRepository;
 import com.ajoledger.backend.circle.repository.CircleRepository;
 import com.ajoledger.backend.email.EmailSender;
-import com.ajoledger.backend.ledger.LedgerDao;
+import com.ajoledger.backend.ledger.dao.LedgerDao;
 import com.ajoledger.backend.ledger.idempotency.IdempotencyKeys;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.user.User;

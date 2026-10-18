@@ -14,7 +14,7 @@ import com.ajoledger.backend.circle.entity.CircleInvite;
 import com.ajoledger.backend.circle.entity.CircleMembership;
 import com.ajoledger.backend.circle.entity.CirclePayout;
 import com.ajoledger.backend.ledger.LedgerService;
-import com.ajoledger.backend.ledger.PayoutSplit;
+import com.ajoledger.backend.ledger.model.PayoutSplit;
 
 import jakarta.validation.Valid;
 

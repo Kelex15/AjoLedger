@@ -1,6 +1,6 @@
 package com.ajoledger.backend.funding;
 
-import com.ajoledger.backend.ledger.LedgerTransaction;
+import com.ajoledger.backend.ledger.model.LedgerTransaction;
 
 import java.math.BigDecimal;
 import java.util.Optional;

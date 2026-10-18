@@ -15,7 +15,7 @@ import com.ajoledger.backend.funding.DepositProvider;
 import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.funding.stripe.exception.CheckoutSessionNotFoundException;
 import com.ajoledger.backend.funding.stripe.exception.StripeCheckoutFailedException;
-import com.ajoledger.backend.ledger.LedgerTransaction;
+import com.ajoledger.backend.ledger.model.LedgerTransaction;
 import com.ajoledger.backend.system.AppProperties;
 
 import lombok.RequiredArgsConstructor;

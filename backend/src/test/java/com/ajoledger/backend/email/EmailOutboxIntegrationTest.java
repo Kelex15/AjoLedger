@@ -1,5 +1,8 @@
 package com.ajoledger.backend.email;
 
+import com.ajoledger.backend.email.transport.EmailDeliveryException;
+import com.ajoledger.backend.email.transport.EmailTransport;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

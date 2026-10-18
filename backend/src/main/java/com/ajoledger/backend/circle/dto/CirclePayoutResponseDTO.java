@@ -2,7 +2,7 @@ package com.ajoledger.backend.circle.dto;
 
 import com.ajoledger.backend.account.Currency;
 import com.ajoledger.backend.circle.entity.CirclePayout;
-import com.ajoledger.backend.ledger.PayoutSplit;
+import com.ajoledger.backend.ledger.model.PayoutSplit;
 
 import java.math.BigDecimal;
 import java.time.Instant;

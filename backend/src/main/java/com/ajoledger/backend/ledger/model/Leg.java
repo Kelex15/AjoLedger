@@ -1,4 +1,4 @@
-package com.ajoledger.backend.ledger;
+package com.ajoledger.backend.ledger.model;
 
 import java.math.BigDecimal;
 import java.util.UUID;

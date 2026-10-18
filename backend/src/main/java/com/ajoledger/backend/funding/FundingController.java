@@ -5,7 +5,7 @@ import com.ajoledger.backend.funding.dto.FundDepositRequestDTO;
 import com.ajoledger.backend.funding.dto.FundWithdrawalRequestDTO;
 import com.ajoledger.backend.funding.dto.FundingDepositResponseDTO;
 import com.ajoledger.backend.funding.dto.FundingTransactionResponseDTO;
-import com.ajoledger.backend.ledger.LedgerTransaction;
+import com.ajoledger.backend.ledger.model.LedgerTransaction;
 
 import jakarta.validation.Valid;
 

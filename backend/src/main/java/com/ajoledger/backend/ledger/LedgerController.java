@@ -12,6 +12,9 @@ import com.ajoledger.backend.ledger.dto.LedgerActivityResponseDTO;
 import com.ajoledger.backend.ledger.dto.LedgerTransactionResponseDTO;
 import com.ajoledger.backend.ledger.dto.TransferRequestDTO;
 import com.ajoledger.backend.ledger.exception.MalformedCursorException;
+import com.ajoledger.backend.ledger.model.LedgerActivity;
+import com.ajoledger.backend.ledger.model.LedgerEntry;
+import com.ajoledger.backend.ledger.model.LedgerTransaction;
 
 import jakarta.validation.Valid;
 
