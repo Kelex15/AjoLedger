@@ -6,7 +6,7 @@ import java.util.List;
 
 @ConfigurationProperties(prefix = "ajoledger")
 public record AppProperties(Jwt jwt, Cors cors, Security security, Google google, Frontend frontend, Scheduler scheduler,
-                             Stripe stripe, PayPal paypal) {
+                             Stripe stripe, PayPal paypal, Email email) {
 
     public record Jwt(String secret, long accessTokenExpiration, long refreshTokenExpiration) {
     }
@@ -24,7 +24,8 @@ public record AppProperties(Jwt jwt, Cors cors, Security security, Google google
     }
 
     public record Scheduler(String deadlineCheckCron, String enrollmentCloseCron, String reconciliationCron,
-                             int reconciliationLookbackHours, String hashChainSealCron) {
+                             int reconciliationLookbackHours, String hashChainSealCron, String emailOutboxCron,
+                             String emailOutboxPurgeCron) {
     }
 
     public record Stripe(String apiKey, String webhookSecret, int connectTimeoutMs, int readTimeoutMs,
@@ -33,5 +34,9 @@ public record AppProperties(Jwt jwt, Cors cors, Security security, Google google
 
     public record PayPal(String clientId, String clientSecret, String environment, int timeoutMs,
                           int uncapturedGraceMinutes) {
+    }
+
+    public record Email(String provider, String from, String resendApiKey, int timeoutMs, int maxAttempts,
+                         int retentionDays) {
     }
 }

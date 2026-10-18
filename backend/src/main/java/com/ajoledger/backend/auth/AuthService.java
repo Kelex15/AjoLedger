@@ -84,17 +84,18 @@ public class AuthService {
                 .build());
 
         String verificationToken = UUID.randomUUID().toString();
+        Instant verificationTokenExpiresAt = Instant.now().plus(Duration.ofHours(VERIFICATION_TOKEN_VALIDITY_HOURS));
         userAuthRepository.save(UserAuth.builder()
                 .user(user)
                 .passwordHash(passwordEncoder.encode(dto.password()))
                 .emailVerified(false)
                 .verificationToken(verificationToken)
-                .verificationTokenExpiresAt(Instant.now().plus(Duration.ofHours(VERIFICATION_TOKEN_VALIDITY_HOURS)))
+                .verificationTokenExpiresAt(verificationTokenExpiresAt)
                 .failedLoginAttempts(0)
                 .build());
 
         String verificationLink = appProperties.frontend().baseUrl() + "/verify-email?token=" + verificationToken;
-        emailSender.sendVerificationEmail(email, verificationLink);
+        emailSender.sendVerificationEmail(email, verificationLink, verificationTokenExpiresAt);
 
         audit(user, AuditEventType.SIGNUP, null);
 
