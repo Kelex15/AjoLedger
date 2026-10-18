@@ -36,6 +36,7 @@ import com.ajoledger.backend.ledger.exception.InsufficientBalanceException;
 import com.ajoledger.backend.ledger.exception.IdempotencyKeyConflictException;
 import com.ajoledger.backend.ledger.exception.InvalidTransferTargetException;
 import com.ajoledger.backend.ledger.exception.LienWithdrawalBlockedException;
+import com.ajoledger.backend.ledger.exception.MalformedCursorException;
 import com.ajoledger.backend.user.exception.UserNotFoundException;
 
 import org.slf4j.Logger;
@@ -79,6 +80,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(IdempotencyKeyConflictException.class)
     public ResponseEntity<MessageResponseDTO> handleIdempotencyKeyConflict(IdempotencyKeyConflictException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new MessageResponseDTO(e.getMessage()));
+    }
+
+    @ExceptionHandler(MalformedCursorException.class)
+    public ResponseEntity<MessageResponseDTO> handleMalformedCursor(MalformedCursorException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new MessageResponseDTO(e.getMessage()));
     }
 
     @ExceptionHandler(AccountNotFoundException.class)
