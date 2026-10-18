@@ -1,7 +1,7 @@
 package com.ajoledger.backend.account.entity;
 
 import com.ajoledger.backend.account.CircleAccountType;
-import com.ajoledger.backend.circle.Circle;
+import com.ajoledger.backend.circle.entity.Circle;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.DiscriminatorValue;

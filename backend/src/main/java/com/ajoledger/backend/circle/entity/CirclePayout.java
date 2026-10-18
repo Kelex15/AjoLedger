@@ -1,9 +1,7 @@
-package com.ajoledger.backend.circle;
+package com.ajoledger.backend.circle.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -24,13 +22,13 @@ import java.util.UUID;
 import com.ajoledger.backend.user.User;
 
 @Entity
-@Table(name = "circle_membership", uniqueConstraints = @UniqueConstraint(columnNames = {"circle_id", "user_id"}))
+@Table(name = "circle_payout", uniqueConstraints = @UniqueConstraint(columnNames = {"circle_id", "round_number"}))
 @Getter
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
-public class CircleMembership {
+public class CirclePayout {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -41,25 +39,20 @@ public class CircleMembership {
     private Circle circle;
 
     @ManyToOne
-    @JoinColumn(name = "user_id", nullable = false, updatable = false)
-    private User user;
+    @JoinColumn(name = "recipient_user_id", nullable = false, updatable = false)
+    private User recipient;
 
-    @Column
-    private Integer position;
+    @Column(name = "round_number", nullable = false, updatable = false)
+    private int roundNumber;
 
-    /** Highest round this membership has successfully contributed for. Null until their first contribution. */
-    @Column(name = "last_contributed_round")
-    private Integer lastContributedRound;
+    @Column(name = "operation_id")
+    private UUID operationId; // null until paid. Not a JPA relation, LedgerOperation isn't a JPA entity.
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private MembershipStatus status;
-
-    @Column(name = "joined_at", nullable = false, updatable = false)
-    private Instant joinedAt;
+    @Column(name = "paid_at", nullable = false, updatable = false)
+    private Instant paidAt;
 
     @PrePersist
     protected void onCreate(){
-        this.joinedAt = Instant.now();
+        this.paidAt = Instant.now();
     }
 }

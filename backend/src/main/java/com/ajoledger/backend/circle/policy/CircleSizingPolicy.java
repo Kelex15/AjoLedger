@@ -2,12 +2,12 @@ package com.ajoledger.backend.circle.policy;
 
 import java.math.BigDecimal;
 
-import com.ajoledger.backend.circle.Circle;
-import com.ajoledger.backend.circle.CircleInviteRepository;
-import com.ajoledger.backend.circle.CircleMembershipRepository;
 import com.ajoledger.backend.circle.CircleStatus;
 import com.ajoledger.backend.circle.MembershipStatus;
 import com.ajoledger.backend.circle.TrustCalculations;
+import com.ajoledger.backend.circle.entity.Circle;
+import com.ajoledger.backend.circle.repository.CircleInviteRepository;
+import com.ajoledger.backend.circle.repository.CircleMembershipRepository;
 import com.ajoledger.backend.user.User;
 
 

@@ -1,7 +1,7 @@
 package com.ajoledger.backend.circle.dto;
 
-import com.ajoledger.backend.circle.Circle;
-import com.ajoledger.backend.circle.CircleMembership;
+import com.ajoledger.backend.circle.entity.Circle;
+import com.ajoledger.backend.circle.entity.CircleMembership;
 
 import java.time.Instant;
 import java.util.UUID;

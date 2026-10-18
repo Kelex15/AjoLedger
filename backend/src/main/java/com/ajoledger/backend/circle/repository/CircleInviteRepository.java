@@ -1,4 +1,6 @@
-package com.ajoledger.backend.circle;
+package com.ajoledger.backend.circle.repository;
+
+import com.ajoledger.backend.circle.entity.CircleInvite;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 

@@ -1,4 +1,4 @@
-package com.ajoledger.backend.circle;
+package com.ajoledger.backend.circle.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

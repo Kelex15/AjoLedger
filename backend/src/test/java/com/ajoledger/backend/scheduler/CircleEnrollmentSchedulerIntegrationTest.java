@@ -18,12 +18,12 @@ import java.util.UUID;
 
 import com.ajoledger.backend.account.AccountService;
 import com.ajoledger.backend.account.UserAccountType;
-import com.ajoledger.backend.circle.Circle;
-import com.ajoledger.backend.circle.CircleRepository;
 import com.ajoledger.backend.circle.CircleService;
 import com.ajoledger.backend.circle.CircleStatus;
 import com.ajoledger.backend.circle.dto.CircleCreateRequestDTO;
+import com.ajoledger.backend.circle.entity.Circle;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
+import com.ajoledger.backend.circle.repository.CircleRepository;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
 import com.ajoledger.backend.user.User;

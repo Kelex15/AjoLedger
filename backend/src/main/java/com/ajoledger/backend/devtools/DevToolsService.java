@@ -1,8 +1,8 @@
 package com.ajoledger.backend.devtools;
 
-import com.ajoledger.backend.circle.Circle;
-import com.ajoledger.backend.circle.CircleRepository;
+import com.ajoledger.backend.circle.entity.Circle;
 import com.ajoledger.backend.circle.exception.CircleNotFoundException;
+import com.ajoledger.backend.circle.repository.CircleRepository;
 import com.ajoledger.backend.scheduler.CircleEnrollmentScheduler;
 import com.ajoledger.backend.scheduler.CircleRoundScheduler;
 

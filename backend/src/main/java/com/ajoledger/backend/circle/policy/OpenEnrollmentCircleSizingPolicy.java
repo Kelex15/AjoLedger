@@ -4,9 +4,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 
-import com.ajoledger.backend.circle.Circle;
-import com.ajoledger.backend.circle.CircleInviteRepository;
-import com.ajoledger.backend.circle.CircleMembershipRepository;
+import com.ajoledger.backend.circle.entity.Circle;
+import com.ajoledger.backend.circle.repository.CircleInviteRepository;
+import com.ajoledger.backend.circle.repository.CircleMembershipRepository;
 
 @Component("OPEN_ENROLLMENT")
 public class OpenEnrollmentCircleSizingPolicy extends CircleSizingPolicy {

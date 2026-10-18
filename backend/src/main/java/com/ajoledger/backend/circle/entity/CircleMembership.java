@@ -1,7 +1,9 @@
-package com.ajoledger.backend.circle;
+package com.ajoledger.backend.circle.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -19,16 +21,17 @@ import lombok.Setter;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.ajoledger.backend.circle.MembershipStatus;
 import com.ajoledger.backend.user.User;
 
 @Entity
-@Table(name = "circle_payout", uniqueConstraints = @UniqueConstraint(columnNames = {"circle_id", "round_number"}))
+@Table(name = "circle_membership", uniqueConstraints = @UniqueConstraint(columnNames = {"circle_id", "user_id"}))
 @Getter
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
-public class CirclePayout {
+public class CircleMembership {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -39,20 +42,25 @@ public class CirclePayout {
     private Circle circle;
 
     @ManyToOne
-    @JoinColumn(name = "recipient_user_id", nullable = false, updatable = false)
-    private User recipient;
+    @JoinColumn(name = "user_id", nullable = false, updatable = false)
+    private User user;
 
-    @Column(name = "round_number", nullable = false, updatable = false)
-    private int roundNumber;
+    @Column
+    private Integer position;
 
-    @Column(name = "operation_id")
-    private UUID operationId; // null until paid. Not a JPA relation, LedgerOperation isn't a JPA entity.
+    /** Highest round this membership has successfully contributed for. Null until their first contribution. */
+    @Column(name = "last_contributed_round")
+    private Integer lastContributedRound;
 
-    @Column(name = "paid_at", nullable = false, updatable = false)
-    private Instant paidAt;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private MembershipStatus status;
+
+    @Column(name = "joined_at", nullable = false, updatable = false)
+    private Instant joinedAt;
 
     @PrePersist
     protected void onCreate(){
-        this.paidAt = Instant.now();
+        this.joinedAt = Instant.now();
     }
 }

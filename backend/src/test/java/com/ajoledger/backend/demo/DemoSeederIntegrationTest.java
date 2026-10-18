@@ -1,10 +1,10 @@
 package com.ajoledger.backend.demo;
 
-import com.ajoledger.backend.circle.CircleMembership;
-import com.ajoledger.backend.circle.CircleMembershipRepository;
-import com.ajoledger.backend.circle.CircleRepository;
 import com.ajoledger.backend.circle.CircleStatus;
 import com.ajoledger.backend.circle.MembershipStatus;
+import com.ajoledger.backend.circle.entity.CircleMembership;
+import com.ajoledger.backend.circle.repository.CircleMembershipRepository;
+import com.ajoledger.backend.circle.repository.CircleRepository;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.user.User;
 import com.ajoledger.backend.user.UserRepository;

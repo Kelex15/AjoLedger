@@ -5,7 +5,7 @@ import com.ajoledger.backend.account.entity.UserAccount;
 import com.ajoledger.backend.account.exception.AccountNotFoundException;
 import com.ajoledger.backend.account.repository.CircleAccountRepository;
 import com.ajoledger.backend.account.repository.UserAccountRepository;
-import com.ajoledger.backend.circle.Circle;
+import com.ajoledger.backend.circle.entity.Circle;
 import com.ajoledger.backend.system.Constants;
 import com.ajoledger.backend.user.User;
 
