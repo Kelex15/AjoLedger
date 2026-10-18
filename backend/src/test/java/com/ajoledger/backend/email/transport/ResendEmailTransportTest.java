@@ -1,4 +1,6 @@
-package com.ajoledger.backend.email;
+package com.ajoledger.backend.email.transport;
+
+import com.ajoledger.backend.email.OutboxEmail;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

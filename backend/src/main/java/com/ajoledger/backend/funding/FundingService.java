@@ -4,8 +4,8 @@ import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.account.entity.UserAccount;
 import com.ajoledger.backend.account.repository.UserAccountRepository;
 import com.ajoledger.backend.system.Constants;
-import com.ajoledger.backend.ledger.Leg;
-import com.ajoledger.backend.ledger.LedgerTransaction;
+import com.ajoledger.backend.ledger.model.LedgerTransaction;
+import com.ajoledger.backend.ledger.model.Leg;
 import com.ajoledger.backend.ledger.LedgerService;
 import com.ajoledger.backend.ledger.LedgerTransactionType;
 

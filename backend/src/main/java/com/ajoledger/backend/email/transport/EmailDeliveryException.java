@@ -1,4 +1,4 @@
-package com.ajoledger.backend.email;
+package com.ajoledger.backend.email.transport;
 
 import lombok.Getter;
 

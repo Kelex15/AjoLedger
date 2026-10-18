@@ -1,6 +1,6 @@
 package com.ajoledger.backend.circle.dto;
 
-import com.ajoledger.backend.circle.CircleInvite;
+import com.ajoledger.backend.circle.entity.CircleInvite;
 
 import java.util.UUID;
 

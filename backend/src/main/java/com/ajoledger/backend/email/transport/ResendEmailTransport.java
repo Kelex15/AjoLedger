@@ -1,5 +1,6 @@
-package com.ajoledger.backend.email;
+package com.ajoledger.backend.email.transport;
 
+import com.ajoledger.backend.email.OutboxEmail;
 import com.ajoledger.backend.system.AppProperties;
 
 import org.springframework.beans.factory.annotation.Autowired;

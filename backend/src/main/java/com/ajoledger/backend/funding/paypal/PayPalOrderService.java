@@ -28,7 +28,7 @@ import com.ajoledger.backend.funding.paypal.exception.PayPalOrderFailedException
 import com.ajoledger.backend.funding.paypal.exception.PayPalOrderNotFoundException;
 import com.ajoledger.backend.funding.processor.ReconciliationMismatchDao;
 import com.ajoledger.backend.funding.processor.ReconciliationMismatchType;
-import com.ajoledger.backend.ledger.LedgerTransaction;
+import com.ajoledger.backend.ledger.model.LedgerTransaction;
 import com.ajoledger.backend.system.AppProperties;
 
 import lombok.RequiredArgsConstructor;

@@ -1,5 +1,7 @@
 package com.ajoledger.backend.email;
 
+import com.ajoledger.backend.email.transport.EmailDeliveryException;
+import com.ajoledger.backend.email.transport.EmailTransport;
 import com.ajoledger.backend.system.AppProperties;
 
 import lombok.RequiredArgsConstructor;

@@ -1,7 +1,7 @@
 package com.ajoledger.backend.circle.dto;
 
 import com.ajoledger.backend.account.Currency;
-import com.ajoledger.backend.circle.Circle;
+import com.ajoledger.backend.circle.entity.Circle;
 
 import java.math.BigDecimal;
 import java.time.Instant;

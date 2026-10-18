@@ -1,7 +1,8 @@
-package com.ajoledger.backend.ledger;
+package com.ajoledger.backend.ledger.model;
 
 import com.ajoledger.backend.account.Currency;
 import com.ajoledger.backend.account.UserAccountType;
+import com.ajoledger.backend.ledger.LedgerTransactionType;
 
 import java.math.BigDecimal;
 import java.time.Instant;

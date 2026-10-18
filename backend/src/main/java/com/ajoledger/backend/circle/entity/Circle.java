@@ -1,4 +1,4 @@
-package com.ajoledger.backend.circle;
+package com.ajoledger.backend.circle.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.ajoledger.backend.circle.CircleStatus;
 import com.ajoledger.backend.circle.policy.CircleSizingPolicyType;
 import com.ajoledger.backend.user.User;
 import com.fasterxml.jackson.annotation.JsonIgnore;

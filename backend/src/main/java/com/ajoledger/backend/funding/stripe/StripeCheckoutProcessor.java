@@ -3,7 +3,7 @@ package com.ajoledger.backend.funding.stripe;
 import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
-import com.ajoledger.backend.ledger.LedgerTransaction;
+import com.ajoledger.backend.ledger.model.LedgerTransaction;
 
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;

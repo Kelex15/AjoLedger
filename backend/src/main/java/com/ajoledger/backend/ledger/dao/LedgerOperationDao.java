@@ -1,4 +1,6 @@
-package com.ajoledger.backend.ledger;
+package com.ajoledger.backend.ledger.dao;
+
+import com.ajoledger.backend.ledger.model.LedgerOperation;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;

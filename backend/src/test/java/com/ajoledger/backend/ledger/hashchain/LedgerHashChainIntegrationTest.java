@@ -22,7 +22,7 @@ import com.ajoledger.backend.account.UserAccountType;
 import com.ajoledger.backend.account.entity.UserAccount;
 import com.ajoledger.backend.funding.FundingService;
 import com.ajoledger.backend.funding.FundingType;
-import com.ajoledger.backend.ledger.Leg;
+import com.ajoledger.backend.ledger.model.Leg;
 import com.ajoledger.backend.ledger.LedgerService;
 import com.ajoledger.backend.ledger.LedgerTransactionType;
 import com.ajoledger.backend.user.User;
