@@ -327,7 +327,7 @@ withdrawal floor = contribution * (total rounds - current round + 1)`}</Formula>
 
         <Section id="stack" title="Stack and infrastructure">
           <p>
-            The backend is a modular monolith organised by feature, not by layer, so each domain owns
+            The backend is a modular monolith organised by feature, so each domain owns
             its own controller, service, repository and DTOs. API versioning is header-based, resolved from{' '}
             <code className="text-foreground">X-API-Version</code> with a default so unaware clients keep
             working. Money is <code className="text-foreground">BigDecimal</code> everywhere, never a float.

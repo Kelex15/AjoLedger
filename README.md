@@ -183,7 +183,7 @@ flowchart TB
     GHA -->|"deploy via SSM"| ec2
 ```
 
-The backend is a modular monolith packaged by feature, not by layer. Each folder holds its own entity, controller, service, repository and DTOs.
+The backend is a modular monolith organized by feature. Each folder holds its own entity, controller, service, repository and DTOs.
 
 ```
 com.ajoledger.backend/
