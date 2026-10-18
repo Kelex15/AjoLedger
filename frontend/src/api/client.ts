@@ -21,6 +21,7 @@ const REFRESH_EXEMPT_PATHS = new Set([
   '/api/auth/refresh',
   '/api/auth/logout',
   '/api/auth/verify-email',
+  '/api/auth/resend-verification',
 ])
 
 function rawFetch(path: string, options: RequestInit): Promise<Response> {

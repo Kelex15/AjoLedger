@@ -48,6 +48,13 @@ export function verifyEmail(token: string) {
   })
 }
 
+export function resendVerification(email: string) {
+  return apiFetch<{ message: string }>('/api/auth/resend-verification', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
 export function logout() {
   return apiFetch<void>('/api/auth/logout', { method: 'POST' })
 }
