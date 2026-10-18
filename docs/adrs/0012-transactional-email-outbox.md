@@ -1,6 +1,6 @@
 # ADR 0012: Transactional Email via an Outbox and Resend
 
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
