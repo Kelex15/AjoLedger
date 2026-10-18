@@ -57,7 +57,10 @@ function ActivityRow({ entry, onSelect }: { entry: LedgerActivity; onSelect: () 
           <ActivityIcon transactionType={entry.transactionType} className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{titleCase(entry.transactionType)}</p>
+          <p className="truncate text-sm font-medium">
+            {titleCase(entry.transactionType)}
+            {entry.circleName && <span className="text-muted-foreground"> · {entry.circleName}</span>}
+          </p>
           <p className="truncate text-xs text-muted-foreground">
             {accountLabel(entry.accountType)} · {formatTime(entry.createdAt)}
           </p>

@@ -67,6 +67,27 @@ function Reference({ label, value }: { label: string; value: string }) {
   )
 }
 
+const CIRCLE_DESCRIPTIONS: Record<string, (circle: string) => string> = {
+  CONTRIBUTION: (circle) => `Contribution to ${circle}`,
+  CONTRIBUTION_REFUND: (circle) => `Contribution refunded from ${circle}`,
+  PAYOUT: (circle) => `Payout from ${circle}`,
+  PAYOUT_LIEN_SKIM: (circle) => `Held in lien from your ${circle} payout`,
+  LIEN_SEIZURE: (circle) => `Seized to cover your default in ${circle}`,
+  SAVINGS_SEIZURE: (circle) => `Seized to cover your default in ${circle}`,
+  CHECKING_SEIZURE: (circle) => `Seized to cover your default in ${circle}`,
+}
+
+// The stored description carries internal ids, so anything tied to a circle is described by the circle instead.
+function describe(entry: LedgerActivity) {
+  if (!entry.circleName) {
+    return entry.description
+  }
+  const text =
+    CIRCLE_DESCRIPTIONS[entry.transactionType]?.(entry.circleName) ??
+    `${titleCase(entry.transactionType)} · ${entry.circleName}`
+  return entry.roundNumber == null ? text : `${text}, round ${entry.roundNumber}`
+}
+
 export function TransactionDetailDialog({
   entry,
   onOpenChange,
@@ -91,7 +112,7 @@ export function TransactionDetailDialog({
                 <ActivityIcon transactionType={entry.transactionType} className="size-5" />
               </span>
               <DialogTitle className="text-xl">{titleCase(entry.transactionType)}</DialogTitle>
-              <DialogDescription>{entry.description}</DialogDescription>
+              <DialogDescription>{describe(entry)}</DialogDescription>
             </DialogHeader>
 
             <span
