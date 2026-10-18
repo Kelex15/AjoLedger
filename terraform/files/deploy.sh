@@ -25,6 +25,8 @@ PAYPAL_CLIENT_ID=$(aws secretsmanager get-secret-value --region "$AWS_REGION" \
   --secret-id "$PAYPAL_CLIENT_ID_ARN" --query SecretString --output text)
 PAYPAL_CLIENT_SECRET=$(aws secretsmanager get-secret-value --region "$AWS_REGION" \
   --secret-id "$PAYPAL_CLIENT_SECRET_ARN" --query SecretString --output text)
+RESEND_API_KEY=$(aws secretsmanager get-secret-value --region "$AWS_REGION" \
+  --secret-id "$RESEND_API_KEY_ARN" --query SecretString --output text)
 
 # The master password is only used here, right after fetching it; the backend runs as
 # ajoledger_app. Idempotent, so it also re-syncs the app password on every deploy.
@@ -79,6 +81,8 @@ run_backend() {
     -e STRIPE_WEBHOOK_SECRET="$STRIPE_WEBHOOK_SECRET" \
     -e PAYPAL_CLIENT_ID="$PAYPAL_CLIENT_ID" \
     -e PAYPAL_CLIENT_SECRET="$PAYPAL_CLIENT_SECRET" \
+    -e EMAIL_PROVIDER=resend \
+    -e RESEND_API_KEY="$RESEND_API_KEY" \
     -e CORS_ALLOWED_ORIGINS="$CORS_ORIGIN" \
     -e FRONTEND_BASE_URL="$CORS_ORIGIN" \
     -e SECURE_COOKIES=true \

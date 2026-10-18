@@ -73,6 +73,7 @@ resource "aws_iam_role_policy" "ec2_secrets" {
         data.aws_secretsmanager_secret.paypal_client_secret.arn,
         aws_db_instance.main.master_user_secret[0].secret_arn,
         aws_secretsmanager_secret.db_app_password.arn,
+        aws_secretsmanager_secret.resend_api_key.arn,
       ]
     }]
   })
@@ -104,6 +105,7 @@ resource "aws_instance" "backend" {
     paypal_client_secret_arn  = data.aws_secretsmanager_secret.paypal_client_secret.arn
     db_secret_arn             = aws_db_instance.main.master_user_secret[0].secret_arn
     db_app_secret_arn         = aws_secretsmanager_secret.db_app_password.arn
+    resend_api_key_arn        = aws_secretsmanager_secret.resend_api_key.arn
     google_oauth_client_id    = var.google_oauth_client_id
     cookie_domain             = var.domain_name
   })
