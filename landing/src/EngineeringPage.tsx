@@ -16,6 +16,8 @@ const adrs = [
   { n: '0009', slug: 'webhook-idempotency-and-reconciliation', title: 'Webhook idempotency and reconciliation' },
   { n: '0010', slug: 'ledger-hash-chain-audit-trail', title: 'Ledger hash chain audit trail' },
   { n: '0011', slug: 'paypal-orders-integration', title: 'PayPal Orders integration' },
+  { n: '0012', slug: 'transactional-email-outbox', title: 'Transactional email outbox' },
+  { n: '0013', slug: 'read-only-demo-account', title: 'Read-only demo account' },
 ]
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -231,10 +233,10 @@ withdrawal floor = contribution * (total rounds - current round + 1)`}</Formula>
             </li>
           </ol>
           <p>
-            Step three is never a forced transfer. Nothing is debited from a remaining member&rsquo;s account
-            to cover a shortfall, because a member who cannot afford a surprise assessment is precisely the
-            member who defaults next, and that correlated failure is the thing the whole model exists to
-            avoid.
+            So the remaining members do carry whatever is left, just spread thin across their future payouts
+            instead of as one hit. I could have charged them extra to keep payouts whole, but someone already
+            stretched by their regular contribution probably can&rsquo;t cover a surprise charge, and would
+            end up defaulting too.
           </p>
           <p>
             What steps one and two recover does not land in the pot directly either. It is credited to the
@@ -289,6 +291,11 @@ withdrawal floor = contribution * (total rounds - current round + 1)`}</Formula>
           </p>
           <ul className="flex list-disc flex-col gap-2.5 pl-5 marker:text-primary">
             <li>
+              Every write locks the accounts it touches with{' '}
+              <code className="text-foreground">SELECT ... FOR UPDATE</code>, always in the same order so two
+              concurrent writes can&rsquo;t deadlock, and checks the balance only once it holds the lock.
+            </li>
+            <li>
               True double-entry. Every transaction&rsquo;s legs net to zero, and that is enforced at the
               schema level, so application code cannot quietly violate it.
             </li>
@@ -297,8 +304,11 @@ withdrawal floor = contribution * (total rounds - current round + 1)`}</Formula>
               database trigger enforces it so no code path can get around it.
             </li>
             <li>
-              Each operation is sealed into an asynchronous hash chain, which makes tampering with history
-              detectable after the fact.
+              Each operation gets sealed into a hash chain, so if a row is edited or deleted later,
+              verification catches it. The catch is that the chain lives in the same database it protects.
+              Anyone who can turn off the triggers can recompute the hashes too, so really it proves the
+              ledger agrees with itself. The fix is publishing the latest hash somewhere outside the system,
+              and I haven&rsquo;t built that yet.
             </li>
             <li>
               Every money-moving operation carries an idempotency key, so a retried request cannot
@@ -306,9 +316,11 @@ withdrawal floor = contribution * (total rounds - current round + 1)`}</Formula>
               once by design.
             </li>
             <li>
-              Tests run against real Postgres through Testcontainers, with property-based tests over the
-              ledger and waterfall invariants. Concurrent writes to the same account get the most attention,
-              since that is where a plausible-looking implementation actually breaks.
+              Tests run against real Postgres through Testcontainers. One fires two transfers of the same full
+              balance at the same instant and asserts exactly one succeeds, since that is where a
+              plausible-looking implementation actually breaks. Property-based tests generate random transfer
+              sequences and check that the books always balance, no balance goes negative, and the waterfall
+              never seizes past a member&rsquo;s ceiling.
             </li>
           </ul>
         </Section>
@@ -327,20 +339,28 @@ withdrawal floor = contribution * (total rounds - current round + 1)`}</Formula>
             authenticated account rather than silently merging on a matching email address.
           </p>
           <p>
-            It runs on an EC2 instance provisioned by Terraform, with RDS for Postgres. Images are built in
-            GitHub Actions and pushed to ECR, and CI authenticates to AWS through OIDC roles so there are no
-            long-lived access keys anywhere. The frontend and this page are on Vercel. Payment integrations
-            are sandbox only and will stay that way, because operating them for real means money transmission
-            licensing.
+            Email goes through an outbox. The code that wants an email sent writes a row inside its own
+            transaction, and a background job delivers it through Resend afterwards, so a provider outage can
+            never roll back money that has already moved. The demo account is one shared login whose session
+            the server limits to read-only requests, and its history was produced by running the real circle
+            flows rather than inserting rows.
+          </p>
+          <p>
+            It runs on an EC2 instance provisioned by Terraform, with RDS for Postgres. Every backend push runs
+            the test suite before GitHub Actions builds an image tagged with the commit, and the redeploy goes
+            through SSM, with CI authenticating to AWS through OIDC so there are no long-lived access keys or
+            open SSH port. If the new container fails its health check, the previous image comes back on its
+            own. The app and this page are on Vercel. Stripe and PayPal are both sandbox only and will stay
+            that way, because operating them for real means money transmission licensing.
           </p>
         </Section>
 
         <Section id="adrs" title="Decision records">
           <p>
             Every non-trivial architectural choice has a record explaining the context, what I picked, what I
-            turned down, and what it cost. The trust model has its own versioned design document, where each
-            rule change forks a new file, so the reasoning stays honest about how the model evolved instead
-            of reading like it arrived fully formed.
+            turned down, and what it cost. The trust model has its own design document, and every time a rule
+            changes I start a new version instead of editing the old one, so you can see how the model got
+            to where it is.
           </p>
           <ul className="mt-2 grid gap-2 sm:grid-cols-2">
             {adrs.map((adr) => (

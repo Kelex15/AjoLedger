@@ -36,8 +36,8 @@ const layers = [
   },
   {
     label: 'Last',
-    title: 'The group, and never as a bill',
-    body: 'Anything still uncovered shows up as slightly smaller payouts across the circle’s remaining rounds. Nobody is ever charged for someone else’s default, because a member who cannot afford a surprise assessment is exactly the member who defaults next.',
+    title: 'Slightly smaller payouts',
+    body: 'Anything still uncovered is spread evenly across the circle’s remaining rounds, so each payout after that is a little smaller. The loss gets shared a bit at a time instead of landing on one person.',
   },
 ]
 

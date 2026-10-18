@@ -8,7 +8,7 @@ It's live at [app.ajoledger.xyz](https://app.ajoledger.xyz). "Try the demo" on t
 
 Stripe and PayPal both run in sandbox mode only. No real money moves, and [here's why](#payments-are-sandbox-only).
 
-- **[The trust model](#the-trust-model)** is the point. Reputation decides payout order, and real money held in each member's `LIEN` backs it, so a default gets covered without billing anyone else in the group.
+- **[The trust model](#the-trust-model)** is the point. Reputation decides payout order, and real money held in each member's `LIEN` backs it, so a default is paid for first out of the defaulter's own money.
 - **[The ledger](#the-ledger)** is the foundation it depends on. Double-entry in hand-written SQL, with row locks against concurrent double-spends and Postgres triggers that refuse unbalanced or edited entries.
 
 ## The problem
@@ -100,7 +100,7 @@ flowchart TD
 
 Two parts of this are worth calling out.
 
-**Step 3 never bills anyone.** I considered charging the shortfall to the remaining members and dropped it. A member who can't afford a surprise assessment defaults too, which is the correlated failure the whole model exists to avoid. Instead the unrecovered amount just means every remaining round pays out a bit less. Nothing is ever debited from an innocent member.
+**Step 3 spreads what's left.** Whatever steps 1 and 2 couldn't recover is split evenly across the remaining rounds, so each later payout is a bit smaller. The other option was charging the remaining members extra to keep payouts whole. I turned it down because someone already stretched by their regular contribution probably can't cover a surprise charge, and would end up defaulting too.
 
 **Recovered money goes to the circle's `RESERVE`, not the pot.** The waterfall seizes a buyout of the defaulter's whole remaining obligation, not one round's shortfall, so paying it straight into the pot would hand a windfall to whoever's payout came next. The reserve releases in even shares across the rounds that are left. Each release recalculates from the reserve's live balance and the rounds still ahead, so a second default folds into the same schedule, and the last round empties the reserve exactly.
 
@@ -135,9 +135,9 @@ He defaults with 3 rounds left after his payout, having already withdrawn the ca
 | 1 | Chinedu's `LIEN` | $150 |
 | 1 | Chinedu's `SAVINGS` and `CHECKING` | $0, already emptied |
 | 2 | `SYSTEM_BUFFER` | $150 |
-| 3 | Remaining members | $0 |
+| 3 | Smaller remaining payouts | $0 |
 
-The $300 lands in the circle's `RESERVE` and releases across the remaining rounds. Nobody else is worse off and nobody is asked for anything.
+The $300 lands in the circle's `RESERVE` and releases across the remaining rounds. Nobody else is worse off.
 
 Compare that with two brand-new members in a two-person circle. No history, no `LIEN`, and ordering can't help because someone goes first. Whoever takes the early slot posts full collateral in cash. The other takes the safe late slot and posts nothing.
 
