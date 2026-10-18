@@ -2,7 +2,11 @@ package com.ajoledger.backend.system.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -23,6 +27,13 @@ import com.ajoledger.backend.user.UserRepository;
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    public static final String DEMO_AUTHORITY = "DEMO";
+
+    /** Refresh is already public; logout is the only authenticated write a demo session needs. */
+    private static final String[] DEMO_ALLOWED_WRITE_ENDPOINTS = {
+            "/api/auth/logout"
+    };
 
     private static final String[] PUBLIC_AUTH_ENDPOINTS = {
             "/api/auth/signup",
@@ -73,7 +84,12 @@ public class SecurityConfig {
                         .requestMatchers(PUBLIC_WEBHOOK_ENDPOINTS).permitAll()
                         .requestMatchers(ERROR_DISPATCH_ENDPOINTS).permitAll()
                         .requestMatchers(PUBLIC_HEALTH_ENDPOINTS).permitAll()
-                        .anyRequest().authenticated()
+                        // A demo session can read everything and change nothing (ADR 0013). Relies on GETs never mutating.
+                        .requestMatchers(HttpMethod.GET, "/**").authenticated()
+                        .requestMatchers(DEMO_ALLOWED_WRITE_ENDPOINTS).authenticated()
+                        .anyRequest().access(AuthorizationManagers.allOf(
+                                AuthenticatedAuthorizationManager.authenticated(),
+                                AuthorizationManagers.not(AuthorityAuthorizationManager.hasAuthority(DEMO_AUTHORITY))))
                 )
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService, userRepository, authCookieService), UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(new CsrfCookieFilter(), UsernamePasswordAuthenticationFilter.class)

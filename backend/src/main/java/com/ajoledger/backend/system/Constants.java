@@ -16,6 +16,16 @@ public final class Constants {
         public static final UUID SYSTEM_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     }
 
+    public static final class Demo {
+
+        private Demo() {
+        }
+
+        /** The shared read-only demo account (ADR 0013). The seeder claims it on first boot, and the unique
+         * constraint on username keeps anyone else from registering it afterwards. */
+        public static final String USERNAME = "demo";
+    }
+
     public static final class Circle {
 
         private Circle() {
