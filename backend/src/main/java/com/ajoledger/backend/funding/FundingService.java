@@ -35,6 +35,19 @@ public class FundingService {
                 target.getCurrency(), "Deposit via " + source, legs);
     }
 
+    /** Funds the demo accounts. Deliberately not a {@link FundingType}, since those are accepted from API
+     * request bodies and this must only ever be reachable from the seeder. */
+    public LedgerTransaction postDemoSeedDeposit(UUID userId, BigDecimal amount, String idempotencyKey) {
+        UserAccount clearing = userAccountRepository.requireByUserIdAndType(
+                Constants.Account.SYSTEM_USER_ID, UserAccountType.CLEARING_DEMO);
+        UserAccount target = userAccountRepository.requireByUserIdAndType(userId, UserAccountType.CHECKING);
+        List<Leg> legs = List.of(
+                new Leg(clearing.getId(), amount, BigDecimal.ZERO),
+                new Leg(target.getId(), BigDecimal.ZERO, amount));
+        return ledgerService.postLedgerTransaction(idempotencyKey, "DEPOSIT", LedgerTransactionType.DEPOSIT, amount,
+                target.getCurrency(), "Demo seed deposit", legs);
+    }
+
     public LedgerTransaction postWithdrawal(UUID userId, UserAccountType sourceType, FundingType destination,
                                        BigDecimal amount, String idempotencyKey) {
         UserAccount source = userAccountRepository.requireByUserIdAndType(userId, sourceType);

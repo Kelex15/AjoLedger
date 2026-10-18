@@ -6,5 +6,6 @@ public enum UserAccountType {
     LIEN,
     SYSTEM_BUFFER,
     CLEARING_STRIPE,
-    CLEARING_PAYPAL
+    CLEARING_PAYPAL,
+    CLEARING_DEMO
 }
