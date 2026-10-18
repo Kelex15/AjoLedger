@@ -38,6 +38,8 @@ This adds one table and its migration, one more scheduled job, and a new secret 
 
 The job assumes there's only one backend instance. On a single instance, scheduled runs don't overlap, so a row can't be picked up twice. If I ever run more than one, the job will need a proper claim step, probably `FOR UPDATE SKIP LOCKED` or a lease column. ADR 0006 has the same caveat about the login lockout counter.
 
+The email job runs on its own scheduler thread. Spring otherwise runs every scheduled job on one shared thread, which would let a Resend outage stall round transitions and reconciliation, and let those hold up a verification email. The other jobs stay together on the shared thread, since the circle jobs have always run one at a time and I don't want to start running them concurrently as a side effect of this.
+
 Emails now go out on the job's schedule instead of instantly. The job has to run every few seconds, or a new user will be sitting there waiting for a verification email that seems like it's never coming.
 
 Verification emails in the outbox contain a working verification link. The same token is already stored in plain text on `user_auth`, so this doesn't expose anything new. Still, sent rows shouldn't hold onto it forever, and I'll clear or delete them after some retention period.
