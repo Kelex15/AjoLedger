@@ -19,6 +19,7 @@ import com.ajoledger.backend.auth.dto.GoogleLoginRequestDTO;
 import com.ajoledger.backend.auth.dto.LoginRequestDTO;
 import com.ajoledger.backend.auth.dto.MessageResponseDTO;
 import com.ajoledger.backend.auth.dto.RefreshRequestDTO;
+import com.ajoledger.backend.auth.dto.ResendVerificationRequestDTO;
 import com.ajoledger.backend.auth.dto.SignupRequestDTO;
 import com.ajoledger.backend.auth.dto.VerifyEmailRequestDTO;
 import com.ajoledger.backend.auth.exception.InvalidOrExpiredTokenException;
@@ -42,6 +43,11 @@ public class AuthController {
     @PostMapping(path = "verify-email", version = "1")
     public ResponseEntity<MessageResponseDTO> verifyEmail(@Valid @RequestBody VerifyEmailRequestDTO dto) {
         return ResponseEntity.ok(authService.verifyEmail(dto));
+    }
+
+    @PostMapping(path = "resend-verification", version = "1")
+    public ResponseEntity<MessageResponseDTO> resendVerification(@Valid @RequestBody ResendVerificationRequestDTO dto) {
+        return ResponseEntity.ok(authService.resendVerification(dto));
     }
 
     @PostMapping(path = "login", version = "1")
