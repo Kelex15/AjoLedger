@@ -9,7 +9,7 @@ export function Footer() {
           <LogoMark className="size-5" />
           <span>AjoLedger</span>
           <span className="opacity-50">·</span>
-          <span>Portfolio project, sandbox payments only</span>
+          <span>Sandbox payments only</span>
         </div>
 
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
