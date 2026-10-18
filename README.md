@@ -2,16 +2,14 @@
 
 A platform for rotating savings groups. These are known as Ajo or Esusu in Nigeria, and as Susu, Chama, tandas or ROSCAs elsewhere. Members contribute a fixed amount each round, and the whole pot goes to one member per round until everyone has been paid once.
 
-I built this solo to work on two things: a double-entry ledger that holds up under concurrent writes, and a trust model that replaces the social pressure these groups normally run on. The banking layer underneath is intentionally thin. It's there so the circle logic has something correct to sit on.
+The core of it is the trust model, which replaces the social pressure these groups normally run on with reputation backed by real money. Underneath it sits a double-entry ledger that's deliberately thin but has to be correct, since the trust model's guarantees only hold if every movement of money balances.
 
 It's live at [app.ajoledger.xyz](https://app.ajoledger.xyz). "Try the demo" on the login page opens a shared read-only account with circles already played out, so you can look around without signing up. There's a [product overview](https://ajoledger.xyz/) and an [engineering write-up](https://ajoledger.xyz/engineering) too.
 
 Stripe and PayPal both run in sandbox mode only. No real money moves, and [here's why](#payments-are-sandbox-only).
 
-The two parts worth reading closely:
-
-- **[The trust model](#the-trust-model).** Reputation decides payout order, and real money held in each member's `LIEN` backs it, so a default gets covered without billing anyone else in the group.
-- **[The ledger](#the-ledger).** Double-entry in hand-written SQL, with row locks against concurrent double-spends and Postgres triggers that refuse unbalanced or edited entries.
+- **[The trust model](#the-trust-model)** is the point. Reputation decides payout order, and real money held in each member's `LIEN` backs it, so a default gets covered without billing anyone else in the group.
+- **[The ledger](#the-ledger)** is the foundation it depends on. Double-entry in hand-written SQL, with row locks against concurrent double-spends and Postgres triggers that refuse unbalanced or edited entries.
 
 ## The problem
 
