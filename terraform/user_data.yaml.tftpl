@@ -14,6 +14,7 @@ write_files:
       PAYPAL_CLIENT_ID_ARN=${paypal_client_id_arn}
       PAYPAL_CLIENT_SECRET_ARN=${paypal_client_secret_arn}
       DB_SECRET_ARN=${db_secret_arn}
+      DB_APP_SECRET_ARN=${db_app_secret_arn}
       GOOGLE_OAUTH_CLIENT_ID=${google_oauth_client_id}
       COOKIE_DOMAIN=${cookie_domain}
   - path: /opt/ajoledger/deploy.sh
@@ -22,7 +23,7 @@ write_files:
       ${indent(6, deploy_script)}
 
 runcmd:
-  - dnf install -y docker jq unzip
+  - dnf install -y docker jq unzip postgresql16
   - systemctl enable --now docker
   - command -v aws || (curl -s "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o /tmp/awscliv2.zip && unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install)
   - /opt/ajoledger/deploy.sh
